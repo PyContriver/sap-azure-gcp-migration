@@ -4,29 +4,31 @@
 sap_ha_cluster_enabled: true
 sap_database_type: hana
 
+# Demo sizes — fit within GCP free-tier 250GB SSD quota per region
+# Production: hana_primary/secondary n2-highmem-32 with 512GB data + 256GB log
 sap_cluster_nodes:
   hana_primary:
     role: hana_primary
-    machine_type: n2-highmem-32
-    data_disk_gb: 512
-    log_disk_gb: 256
+    machine_type: n2-standard-4
+    data_disk_gb: 50
+    log_disk_gb: 30
   hana_secondary:
     role: hana_secondary
-    machine_type: n2-highmem-32
-    data_disk_gb: 512
-    log_disk_gb: 256
+    machine_type: n2-standard-4
+    data_disk_gb: 50
+    log_disk_gb: 30
   ascs:
     role: ascs
-    machine_type: n2-standard-8
-    data_disk_gb: 128
+    machine_type: n2-standard-2
+    data_disk_gb: 20
   ers:
     role: ers
-    machine_type: n2-standard-8
-    data_disk_gb: 128
+    machine_type: n2-standard-2
+    data_disk_gb: 20
   aas:
     role: aas
-    machine_type: n2-standard-16
-    data_disk_gb: 128
+    machine_type: n2-standard-2
+    data_disk_gb: 20
 
 sap_cluster_vips:
   hana_vip: 10.20.0.10
