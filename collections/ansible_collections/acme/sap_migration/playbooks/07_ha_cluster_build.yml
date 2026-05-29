@@ -1,24 +1,25 @@
 ---
-- name: SAP Migration | HA cluster build on GCP (IBM Db2)
-  hosts: sap_ha_cluster
+# Play-level when: is invalid. DB type filtering via task-level when on each role call.
+
+- name: SAP Migration | HA cluster build on GCP (Db2 HADR)
+  hosts: db2_primary:db2_secondary
   become: true
   serial: 1
   vars_files:
     - ../inventory/group_vars/all.yml
     - ../inventory/group_vars/sap_ha_cluster.yml
-    - ../inventory/group_vars/profiles/{{ sap_database_type }}_ha.yml
+    - ../inventory/group_vars/profiles/db2_ha.yml
   roles:
     - acme.sap_migration.db2_hadr_setup
-  when: sap_database_type == 'db2'
 
-- name: SAP Migration | HA cluster build on GCP (SAP HANA)
-  hosts: sap_ha_cluster
+- name: SAP Migration | HA cluster build on GCP (HANA HSR + Pacemaker)
+  hosts: hana_primary:hana_secondary
   become: true
   serial: 1
   vars_files:
     - ../inventory/group_vars/all.yml
     - ../inventory/group_vars/sap_ha_cluster.yml
-    - ../inventory/group_vars/profiles/{{ sap_database_type }}_ha.yml
+    - ../inventory/group_vars/profiles/hana_ha.yml
   tasks:
     - name: Install and configure Pacemaker cluster with GCP STONITH
       ansible.builtin.include_role:
@@ -37,4 +38,3 @@
       when:
         - sap_ha_cluster_enabled | bool
         - sap_node_role == 'hana_primary'
-  when: sap_database_type == 'hana'
