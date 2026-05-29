@@ -43,9 +43,9 @@ aap_survey_defaults:
   sap_hana_instance_nr: "{{ lookup('env', 'SAP_HANA_INSTANCE_NR') | default('00', true) }}"
   azure_resource_group: "{{ lookup('env', 'AZURE_RESOURCE_GROUP') | default('', true) }}"
   azure_location: "{{ lookup('env', 'AZURE_LOCATION') | default('eastus', true) }}"
-  gcp_project: "{{ lookup('env', 'GCP_PROJECT') | default('', true) }}"
-  gcp_region: "{{ lookup('env', 'GCP_REGION') | default('us-central1', true) }}"
-  gcp_zone: "{{ lookup('env', 'GCP_ZONE') | default('us-central1-a', true) }}"
+  gcp_project: "{{ lookup('env', 'GCP_PROJECT') | default('sap-migration-demo-1780031332', true) }}"
+  gcp_region: us-central1
+  gcp_zone: us-central1-a
   sap_migration_dry_run: "false"
   sap_migration_skip_decommission: "true"
 
