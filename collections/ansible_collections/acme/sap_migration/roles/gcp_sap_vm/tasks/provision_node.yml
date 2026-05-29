@@ -28,6 +28,7 @@
     service_account_file: "{{ gcp_service_account_file_param }}"
     state: present
   when: node_spec.data_disk_gb is defined
+  register: data_disk
 
 - name: Create log disk for HANA nodes
   google.cloud.gcp_compute_disk:
@@ -40,6 +41,7 @@
     service_account_file: "{{ gcp_service_account_file_param }}"
     state: present
   when: node_spec.log_disk_gb is defined
+  register: log_disk
 
 - name: Reserve external IP for SAP node
   google.cloud.gcp_compute_address:
@@ -51,17 +53,42 @@
     state: present
   register: node_address
 
-- name: Build disk attachment list
+- name: Build disk attachment list (boot only)
   ansible.builtin.set_fact:
     node_disks:
       - auto_delete: true
         boot: true
         source: "{{ boot_disk }}"
-      - auto_delete: false
+  when: node_spec.data_disk_gb is not defined
+
+- name: Build disk attachment list (boot + data)
+  ansible.builtin.set_fact:
+    node_disks:
+      - auto_delete: true
+        boot: true
+        source: "{{ boot_disk }}"
+      - auto_delete: true
         boot: false
-        source: "{{ node_name }}-data"
-        device_name: "{{ node_name }}-data"
-  when: node_spec.data_disk_gb is defined
+        source: "{{ data_disk }}"
+  when:
+    - node_spec.data_disk_gb is defined
+    - node_spec.log_disk_gb is not defined
+
+- name: Build disk attachment list (boot + data + log)
+  ansible.builtin.set_fact:
+    node_disks:
+      - auto_delete: true
+        boot: true
+        source: "{{ boot_disk }}"
+      - auto_delete: true
+        boot: false
+        source: "{{ data_disk }}"
+      - auto_delete: true
+        boot: false
+        source: "{{ log_disk }}"
+  when:
+    - node_spec.data_disk_gb is defined
+    - node_spec.log_disk_gb is defined
 
 - name: Create GCP compute instance for SAP node
   google.cloud.gcp_compute_instance:
