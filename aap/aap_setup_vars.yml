@@ -18,6 +18,7 @@ aap_ee_image: "{{ lookup('env', 'AAP_EE_IMAGE') | default('34.205.23.227/demo/sa
 aap_credential_azure_name: SAP Migration - Azure
 aap_credential_gcp_name: SAP Migration - GCP
 aap_credential_ssh_name: SAP Migration - SSH
+aap_credential_aws_name: SAP Migration - AWS
 
 # ─── Project ──────────────────────────────────────────────────────────────────
 aap_project_name: SAP Azure-GCP Migration
@@ -86,6 +87,15 @@ aap_job_templates:
       - "{{ aap_credential_gcp_name }}"
       - "{{ aap_credential_ssh_name }}"
     identifier: day2
+    ask_variables_on_launch: true
+
+  - name: SAP Migration - Provision AWS SAP VM
+    playbook: collections/ansible_collections/acme/sap_migration/playbooks/provision_aws_sap_vm.yml
+    inventory: "{{ aap_inventory_controller_name }}"
+    execution_environment_override: "{{ lookup('env', 'AAP_EE_SAP_MOD') | default('sap-mod-ee', true) }}"
+    credentials:
+      - "{{ aap_credential_aws_name }}"
+    identifier: aws_vm
     ask_variables_on_launch: true
 
 # ─── Workflow ─────────────────────────────────────────────────────────────────

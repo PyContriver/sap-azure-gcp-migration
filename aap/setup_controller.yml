@@ -161,6 +161,30 @@
         msg: "Skipping SSH credential — set SSH_PRIVATE_KEY_FILE in .env"
       tags: [credentials, aap_setup]
 
+    - name: Create AWS credential
+      when: >-
+        lookup('env', 'AWS_ACCESS_KEY_ID') | length > 0
+        and lookup('env', 'AWS_SECRET_ACCESS_KEY') | length > 0
+      ansible.controller.credential:
+        name: "{{ aap_credential_aws_name }}"
+        description: AWS access key for amazon.aws EC2 provisioning (sap-mod-ee)
+        organization: "{{ aap_organization }}"
+        credential_type: Amazon Web Services
+        inputs:
+          username: "{{ lookup('env', 'AWS_ACCESS_KEY_ID') }}"
+          password: "{{ lookup('env', 'AWS_SECRET_ACCESS_KEY') }}"
+        state: present
+      no_log: true
+      tags: [credentials, aap_setup]
+
+    - name: Warn — AWS credential skipped (env vars not set)
+      when: >-
+        lookup('env', 'AWS_ACCESS_KEY_ID') | length == 0
+        or lookup('env', 'AWS_SECRET_ACCESS_KEY') | length == 0
+      ansible.builtin.debug:
+        msg: "Skipping AWS credential — set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY in .env"
+      tags: [credentials, aap_setup]
+
     # ── Project ─────────────────────────────────────────────────────────────
     - name: Create SCM project
       ansible.controller.project:
@@ -251,7 +275,7 @@
         project: "{{ aap_project_name }}"
         playbook: "{{ item.playbook }}"
         inventory: "{{ item.inventory }}"
-        execution_environment: "{{ aap_ee_name }}"
+        execution_environment: "{{ item.execution_environment_override | default(aap_ee_name) }}"
         credentials: "{{ item.credentials | default([]) }}"
         ask_variables_on_launch: "{{ item.ask_variables_on_launch | default(true) }}"
         state: present

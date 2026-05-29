@@ -1,0 +1,181 @@
+---
+# Provision a RHEL-for-SAP EC2 instance on AWS as an alternative migration target.
+# Uses amazon.aws collection — run with sap-mod-ee (has boto3 + amazon.aws).
+# AWS credentials injected via SAP Migration - AWS credential on the job template.
+#
+# Survey variables: aws_region, aws_vpc_id, aws_subnet_id, aws_key_name,
+#                   aws_instance_type, aws_ami_id (or auto-resolve RHEL 9),
+#                   sap_sid, allowed_ssh_cidr
+
+- name: Provision AWS SAP VM
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files:
+    - ../inventory/group_vars/all.yml
+
+  vars:
+    _aws_region: "{{ aws_region | default('us-west-2') }}"
+    _instance_type: "{{ aws_instance_type | default('m5.2xlarge') }}"
+    _key_name: "{{ aws_key_name | default('demo_test') }}"
+    _allowed_cidr: "{{ allowed_ssh_cidr | default('0.0.0.0/0') }}"
+    _name_tag: "sap-{{ sap_sid | lower }}-migration-target"
+
+  tasks:
+
+    - name: Resolve latest RHEL 9 SAP AMI when aws_ami_id not set
+      when: aws_ami_id | default('') | length == 0
+      amazon.aws.ec2_ami_info:
+        region: "{{ _aws_region }}"
+        owners:
+          - "309956199486"
+        filters:
+          name: "RHEL-9.*_HVM*x86_64*"
+          architecture: x86_64
+          virtualization-type: hvm
+          root-device-type: ebs
+          state: available
+      register: _rhel_ami_lookup
+
+    - name: Set AMI from auto-resolve
+      when: aws_ami_id | default('') | length == 0
+      ansible.builtin.set_fact:
+        _ami_id: >-
+          {{
+            (_rhel_ami_lookup.images | sort(attribute='creation_date') | last).image_id
+          }}
+
+    - name: Use provided AMI
+      when: aws_ami_id | default('') | length > 0
+      ansible.builtin.set_fact:
+        _ami_id: "{{ aws_ami_id }}"
+
+    - name: Resolve default VPC when aws_vpc_id not set
+      when: aws_vpc_id | default('') | length == 0
+      amazon.aws.ec2_vpc_net_info:
+        region: "{{ _aws_region }}"
+        filters:
+          isDefault: "true"
+      register: _default_vpc
+
+    - name: Set VPC id
+      ansible.builtin.set_fact:
+        _vpc_id: >-
+          {{
+            aws_vpc_id
+            if (aws_vpc_id | default('') | length > 0)
+            else (_default_vpc.vpcs | first).vpc_id
+          }}
+
+    - name: Resolve public subnet when aws_subnet_id not set
+      when: aws_subnet_id | default('') | length == 0
+      amazon.aws.ec2_vpc_subnet_info:
+        region: "{{ _aws_region }}"
+        filters:
+          vpc-id: "{{ _vpc_id }}"
+          defaultForAz: "true"
+      register: _default_subnets
+
+    - name: Set subnet id
+      ansible.builtin.set_fact:
+        _subnet_id: >-
+          {{
+            aws_subnet_id
+            if (aws_subnet_id | default('') | length > 0)
+            else (_default_subnets.subnets | first).subnet_id
+          }}
+
+    - name: Create SAP migration security group
+      amazon.aws.ec2_security_group:
+        name: "sap-migration-{{ sap_sid | lower }}-sg"
+        description: "SAP migration target — {{ sap_sid }}"
+        vpc_id: "{{ _vpc_id }}"
+        region: "{{ _aws_region }}"
+        rules:
+          - proto: tcp
+            from_port: 22
+            to_port: 22
+            cidr_ip: "{{ _allowed_cidr }}"
+          - proto: tcp
+            from_port: 3200
+            to_port: 3299
+            cidr_ip: "{{ _allowed_cidr }}"
+            rule_desc: SAP dispatcher
+          - proto: tcp
+            from_port: 50000
+            to_port: 50200
+            cidr_ip: "{{ _allowed_cidr }}"
+            rule_desc: Db2 / HANA
+          - proto: tcp
+            from_port: 1128
+            to_port: 1129
+            cidr_ip: "{{ _allowed_cidr }}"
+            rule_desc: SAP Host Agent
+        tags:
+          Name: "sap-migration-{{ sap_sid | lower }}-sg"
+          sap-system: "{{ sap_sid | lower }}"
+          migration-name: "{{ migration_name }}"
+        state: present
+      register: _sg
+
+    - name: Launch EC2 instance for SAP migration target
+      amazon.aws.ec2_instance:
+        name: "{{ _name_tag }}"
+        region: "{{ _aws_region }}"
+        instance_type: "{{ _instance_type }}"
+        image_id: "{{ _ami_id }}"
+        key_name: "{{ _key_name }}"
+        subnet_id: "{{ _subnet_id }}"
+        security_groups:
+          - "{{ _sg.group_id }}"
+        network:
+          assign_public_ip: true
+        volumes:
+          - device_name: /dev/sda1
+            ebs:
+              volume_size: 100
+              volume_type: gp3
+              delete_on_termination: true
+          - device_name: /dev/sdb
+            ebs:
+              volume_size: 200
+              volume_type: gp3
+              delete_on_termination: true
+        tags:
+          sap-system: "{{ sap_sid | lower }}"
+          sap-role: migration-target
+          migration-name: "{{ migration_name }}"
+          managed-by: ansible
+        wait: true
+        wait_timeout: 300
+        state: running
+      register: _ec2
+
+    - name: Wait for SSH on new instance
+      ansible.builtin.wait_for:
+        host: "{{ _ec2.instances[0].public_ip_address }}"
+        port: 22
+        delay: 15
+        timeout: 300
+
+    - name: Report provisioned instance
+      ansible.builtin.debug:
+        msg:
+          instance_id: "{{ _ec2.instances[0].instance_id }}"
+          public_ip: "{{ _ec2.instances[0].public_ip_address }}"
+          private_ip: "{{ _ec2.instances[0].private_ip_address }}"
+          ami_id: "{{ _ami_id }}"
+          instance_type: "{{ _instance_type }}"
+          region: "{{ _aws_region }}"
+          key_pair: "{{ _key_name }}"
+          connect: "ssh ec2-user@{{ _ec2.instances[0].public_ip_address }}"
+
+    - name: Persist instance facts for downstream plays
+      ansible.builtin.set_stats:
+        data:
+          aws_sap_instance_id: "{{ _ec2.instances[0].instance_id }}"
+          aws_sap_public_ip: "{{ _ec2.instances[0].public_ip_address }}"
+          aws_sap_private_ip: "{{ _ec2.instances[0].private_ip_address }}"
+          aws_sap_ami_id: "{{ _ami_id }}"
+          aws_sap_region: "{{ _aws_region }}"
+        aggregate: false
