@@ -15,7 +15,7 @@ azure_vm_tag_filter:
 # GCP target
 gcp_project: "{{ lookup('env', 'GCP_PROJECT') | default('', true) }}"
 gcp_region: us-central1
-gcp_zone: "{{ gcp_region }}-a"
+gcp_zone: us-central1-a
 gcp_cred_kind: "{{ lookup('env', 'GCP_AUTH_KIND') | default('serviceaccount', true) }}"
 # AAP custom credential injects GOOGLE_APPLICATION_CREDENTIALS; local runs use GCP_SERVICE_ACCOUNT_FILE
 gcp_cred_file: >-

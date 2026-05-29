@@ -9,25 +9,25 @@ sap_database_type: db2
 sap_cluster_nodes:
   db2_primary:
     role: db2_primary
-    machine_type: n2-standard-4
+    machine_type: e2-standard-4
     data_disk_gb: 50
     log_disk_gb: 30
   db2_secondary:
     role: db2_secondary
-    machine_type: n2-standard-4
+    machine_type: e2-standard-4
     data_disk_gb: 50
     log_disk_gb: 30
   ascs:
     role: ascs
-    machine_type: n2-standard-2
+    machine_type: e2-standard-2
     data_disk_gb: 20
   ers:
     role: ers
-    machine_type: n2-standard-2
+    machine_type: e2-standard-2
     data_disk_gb: 20
   aas:
     role: aas
-    machine_type: n2-standard-2
+    machine_type: e2-standard-2
     data_disk_gb: 20
 
 sap_cluster_vips:
