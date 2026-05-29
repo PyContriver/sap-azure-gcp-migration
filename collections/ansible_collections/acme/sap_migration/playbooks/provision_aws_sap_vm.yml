@@ -28,7 +28,7 @@
       amazon.aws.ec2_ami_info:
         region: "{{ _aws_region }}"
         owners:
-          - "309956199486"
+          - "309956199498"
         filters:
           name: "RHEL-9.*_HVM*x86_64*"
           architecture: x86_64
@@ -36,6 +36,16 @@
           root-device-type: ebs
           state: available
       register: _rhel_ami_lookup
+
+    - name: Assert RHEL AMI was found
+      when: aws_ami_id | default('') | length == 0
+      ansible.builtin.assert:
+        that:
+          - _rhel_ami_lookup.images | default([]) | length > 0
+        fail_msg: >-
+          No RHEL 9 AMI found in {{ _aws_region }} (owner 309956199498).
+          Subscribe to RHEL on AWS Marketplace for this account, or pass aws_ami_id
+          explicitly in the survey.
 
     - name: Set AMI from auto-resolve
       when: aws_ami_id | default('') | length == 0
