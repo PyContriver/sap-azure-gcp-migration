@@ -1,0 +1,15 @@
+---
+# Database-specific cluster topology lives in:
+#   inventory/group_vars/profiles/db2_ha.yml
+#   inventory/group_vars/profiles/hana_ha.yml
+#
+# Set sap_database_type in all.yml or AAP survey (db2 | hana).
+# Playbooks load: profiles/{{ sap_database_type }}_ha.yml
+
+sap_pacemaker_fence_agent: fence_gce
+sap_pacemaker_fence_options: "project={{ gcp_project }}"
+
+sap_user_uid_gid:
+  sidadm_uid: 1001
+  sidadm_gid: 1001
+  sapsys_gid: 1002

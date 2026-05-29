@@ -1,0 +1,40 @@
+---
+- name: SAP Migration | HA cluster build on GCP (IBM Db2)
+  hosts: sap_ha_cluster
+  become: true
+  serial: 1
+  vars_files:
+    - ../inventory/group_vars/all.yml
+    - ../inventory/group_vars/sap_ha_cluster.yml
+    - ../inventory/group_vars/profiles/{{ sap_database_type }}_ha.yml
+  roles:
+    - acme.sap_migration.db2_hadr_setup
+  when: sap_database_type == 'db2'
+
+- name: SAP Migration | HA cluster build on GCP (SAP HANA)
+  hosts: sap_ha_cluster
+  become: true
+  serial: 1
+  vars_files:
+    - ../inventory/group_vars/all.yml
+    - ../inventory/group_vars/sap_ha_cluster.yml
+    - ../inventory/group_vars/profiles/{{ sap_database_type }}_ha.yml
+  tasks:
+    - name: Install and configure Pacemaker cluster with GCP STONITH
+      ansible.builtin.include_role:
+        name: redhat.sap_install.sap_ha_pacemaker_cluster
+      vars:
+        sap_ha_pacemaker_cluster_fence_agent: "{{ sap_pacemaker_fence_agent }}"
+        sap_ha_pacemaker_cluster_fence_options: "{{ sap_pacemaker_fence_options }}"
+      when: sap_ha_cluster_enabled | bool
+
+    - name: Configure HANA System Replication between primary and secondary
+      ansible.builtin.include_role:
+        name: redhat.sap_install.sap_ha_install_hana_hsr
+      vars:
+        sap_hsr_mode: "{{ sap_hsr_mode }}"
+        sap_hsr_operation_mode: "{{ sap_hsr_operation_mode }}"
+      when:
+        - sap_ha_cluster_enabled | bool
+        - sap_node_role == 'hana_primary'
+  when: sap_database_type == 'hana'

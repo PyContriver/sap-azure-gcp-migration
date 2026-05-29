@@ -1,0 +1,6 @@
+---
+sap_db2_filesystem_paths:
+  - /db2/{{ sap_db2_instance }}
+  - /db2/{{ sap_db2_instance }}/log
+  - /db2/{{ sap_db2_instance }}/export
+  - /sapdb/{{ sap_sid | lower }}

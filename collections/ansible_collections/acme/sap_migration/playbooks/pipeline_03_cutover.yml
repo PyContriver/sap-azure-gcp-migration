@@ -1,0 +1,5 @@
+---
+# Pipeline Phase 3 — Validate GCP system, perform DNS/VIP cutover.
+# AAP job template: "SAP Migration - 03 Cutover"
+# Runs on: SAP Migration GCP
+- import_playbook: 11_validate_cutover.yml

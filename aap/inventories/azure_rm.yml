@@ -1,0 +1,12 @@
+[plugin:azure_rm]
+auth_source: auto
+include_vm_resource_groups:
+  - "{{ lookup('env', 'AZURE_RESOURCE_GROUP') | default('sap-rg', true) }}"
+hostvar_expressions:
+  ansible_host: private_ipv4_addresses | first | default(public_ipv4_addresses | first)
+  sap_node_role: tags.sap_role | default('unknown')
+keyed_groups:
+  - key: tags.sap_role
+    prefix: sap
+compose:
+  azure_vm_size: vm_size

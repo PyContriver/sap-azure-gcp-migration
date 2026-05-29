@@ -1,0 +1,66 @@
+---
+- name: Skip HANA Backint when database is IBM Db2
+  ansible.builtin.debug:
+    msg: >-
+      Db2 backups use native db2 backup / storage policy — configure separately.
+      Set day2_db2_backup_enabled=true when db2 backup automation is added.
+  when:
+    - sap_database_type == 'db2'
+    - not day2_db2_backup_enabled | default(false) | bool
+
+- name: Ensure GCS backup bucket exists
+  google.cloud.gcp_storage_bucket:
+    name: "{{ day2_backint_bucket }}"
+    project: "{{ gcp_project }}"
+    location: "{{ gcp_region }}"
+    auth_kind: "{{ gcp_cred_kind }}"
+    service_account_file: "{{ gcp_service_account_file_param }}"
+    state: present
+  delegate_to: localhost
+  run_once: true
+  when:
+    - sap_database_type == 'hana'
+    - day2_backint_enabled | bool
+
+- name: Setup HANA Backint for GCP GCS
+  ansible.builtin.include_role:
+    name: sap.sap_operations.sap_hana_backint
+  vars:
+    sap_hana_backint_action: setup
+    sap_hana_backint_platform: "{{ day2_backint_platform }}"
+    sap_hana_backint_sid: "{{ sap_sid }}"
+    sap_hana_backint_bucket: "{{ day2_backint_bucket }}"
+  when:
+    - sap_database_type == 'hana'
+    - day2_backint_enabled | bool
+    - day2_backint_setup_if_missing | bool
+    - sap_node_role == 'hana_primary'
+
+- name: Execute HANA Backint backup to GCS
+  ansible.builtin.include_role:
+    name: sap.sap_operations.sap_hana_backint
+  vars:
+    sap_hana_backint_action: "{{ day2_backint_action }}"
+    sap_hana_backint_platform: "{{ day2_backint_platform }}"
+    sap_hana_backint_sid: "{{ sap_sid }}"
+    sap_hana_backint_bucket: "{{ day2_backint_bucket }}"
+  when:
+    - sap_database_type == 'hana'
+    - day2_backint_enabled | bool
+    - day2_backint_action in ['backup', 'clean']
+    - sap_node_role == 'hana_primary'
+
+- name: Cleanup aged backups per retention policy
+  ansible.builtin.include_role:
+    name: sap.sap_operations.sap_hana_backint
+  vars:
+    sap_hana_backint_action: clean
+    sap_hana_backint_platform: "{{ day2_backint_platform }}"
+    sap_hana_backint_sid: "{{ sap_sid }}"
+    sap_hana_backint_bucket: "{{ day2_backint_bucket }}"
+    sap_hana_backint_clean_retained_backups: "{{ day2_backint_retention_days }}"
+  when:
+    - sap_database_type == 'hana'
+    - day2_backint_enabled | bool
+    - day2_backint_action == 'clean' or (day2_backint_action == 'backup' and day2_backint_retention_days | int > 0)
+    - sap_node_role == 'hana_primary'

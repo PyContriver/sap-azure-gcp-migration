@@ -1,0 +1,5 @@
+---
+gcp_disk_type: pd-ssd
+gcp_boot_disk_size_gb: 128
+ssh_wait_timeout: 900
+gcp_provisioned_hosts: []

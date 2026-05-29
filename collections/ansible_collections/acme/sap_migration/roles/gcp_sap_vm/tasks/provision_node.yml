@@ -1,0 +1,104 @@
+---
+- name: Set node naming facts
+  ansible.builtin.set_fact:
+    node_name: "{{ migration_name }}-{{ cluster_node.key | replace('_', '-') }}"
+    node_spec: "{{ cluster_node.value }}"
+
+- name: Create boot disk for SAP node
+  google.cloud.gcp_compute_disk:
+    name: "{{ node_name }}-boot"
+    size_gb: "{{ gcp_boot_disk_size_gb }}"
+    type: "{{ gcp_disk_type }}"
+    source_image: "{{ gcp_default_image }}"
+    zone: "{{ gcp_zone }}"
+    project: "{{ gcp_project }}"
+    auth_kind: "{{ gcp_cred_kind }}"
+    service_account_file: "{{ gcp_service_account_file_param }}"
+    state: present
+  register: boot_disk
+
+- name: Create data disk for SAP node
+  google.cloud.gcp_compute_disk:
+    name: "{{ node_name }}-data"
+    size_gb: "{{ node_spec.data_disk_gb }}"
+    type: "{{ gcp_disk_type }}"
+    zone: "{{ gcp_zone }}"
+    project: "{{ gcp_project }}"
+    auth_kind: "{{ gcp_cred_kind }}"
+    service_account_file: "{{ gcp_service_account_file_param }}"
+    state: present
+  when: node_spec.data_disk_gb is defined
+
+- name: Create log disk for HANA nodes
+  google.cloud.gcp_compute_disk:
+    name: "{{ node_name }}-log"
+    size_gb: "{{ node_spec.log_disk_gb }}"
+    type: "{{ gcp_disk_type }}"
+    zone: "{{ gcp_zone }}"
+    project: "{{ gcp_project }}"
+    auth_kind: "{{ gcp_cred_kind }}"
+    service_account_file: "{{ gcp_service_account_file_param }}"
+    state: present
+  when: node_spec.log_disk_gb is defined
+
+- name: Reserve external IP for SAP node
+  google.cloud.gcp_compute_address:
+    name: "{{ node_name }}-address"
+    region: "{{ gcp_region }}"
+    project: "{{ gcp_project }}"
+    auth_kind: "{{ gcp_cred_kind }}"
+    service_account_file: "{{ gcp_service_account_file_param }}"
+    state: present
+  register: node_address
+
+- name: Build disk attachment list
+  ansible.builtin.set_fact:
+    node_disks:
+      - auto_delete: true
+        boot: true
+        source: "{{ boot_disk }}"
+      - auto_delete: false
+        boot: false
+        source: "{{ node_name }}-data"
+        device_name: "{{ node_name }}-data"
+  when: node_spec.data_disk_gb is defined
+
+- name: Create GCP compute instance for SAP node
+  google.cloud.gcp_compute_instance:
+    name: "{{ node_name }}"
+    machine_type: "{{ node_spec.machine_type }}"
+    disks: "{{ node_disks | default([{'auto_delete': true, 'boot': true, 'source': boot_disk}]) }}"
+    network_interfaces:
+      - subnetwork:
+          selfLink: "projects/{{ gcp_project }}/regions/{{ gcp_region }}/subnetworks/{{ gcp_subnet_name }}"
+        access_configs:
+          - name: External NAT
+            nat_ip: "{{ node_address }}"
+            type: ONE_TO_ONE_NAT
+    metadata:
+      ssh-keys: "{{ gcp_user }}:{{ lookup('file', gcp_ssh_key_file) }}"
+    zone: "{{ gcp_zone }}"
+    project: "{{ gcp_project }}"
+    auth_kind: "{{ gcp_cred_kind }}"
+    service_account_file: "{{ gcp_service_account_file_param }}"
+    tags:
+      items: "{{ gcp_sap_firewall_tags.keys() | list }}"
+    labels:
+      managed-by: sap-migration
+      migration: "{{ migration_name }}"
+      sap-role: "{{ node_spec.role }}"
+    state: present
+  register: node_instance
+
+- name: Record provisioned host metadata
+  ansible.builtin.set_fact:
+    gcp_provisioned_hosts: >-
+      {{
+        gcp_provisioned_hosts + [{
+          'name': node_name,
+          'groups': ['sap_ha_cluster', 'gcp_sap', node_spec.role],
+          'ansible_host': node_address.address,
+          'ansible_user': gcp_user,
+          'sap_node_role': node_spec.role
+        }]
+      }}

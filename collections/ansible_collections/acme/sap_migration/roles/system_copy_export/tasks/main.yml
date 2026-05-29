@@ -1,0 +1,52 @@
+---
+- name: Stop SAP services in HA-safe order on Azure
+  ansible.builtin.include_role:
+    name: sap.sap_operations.sap_control
+  vars:
+    sap_control_action: stop
+    sap_control_instance: "{{ sap_instance_nr }}"
+  when: not sap_migration_dry_run | bool
+
+- name: Ensure export directory exists on Azure staging host
+  ansible.builtin.file:
+    path: "{{ system_copy_export_path }}"
+    state: directory
+    owner: "{{ sap_db2_instance if sap_database_type == 'db2' else sap_sid | lower ~ 'adm' }}"
+    group: "{{ sap_db2_instance if sap_database_type == 'db2' else 'sapsys' }}"
+    mode: "0750"
+  become: true
+
+- name: Export database — IBM Db2 path
+  ansible.builtin.include_tasks: db2.yml
+  when: sap_database_type == 'db2'
+
+- name: Export database — SAP HANA path
+  ansible.builtin.include_tasks: hana.yml
+  when: sap_database_type == 'hana'
+
+- name: Generate export manifest checksums
+  ansible.builtin.find:
+    paths: "{{ system_copy_export_path }}"
+    recurse: true
+    file_type: file
+  register: export_files
+
+- name: Create checksum manifest
+  ansible.builtin.copy:
+    content: |
+      database_type={{ sap_database_type }}
+      export_method={{ system_copy_export_method }}
+      {% for f in export_files.files %}
+      {{ f.path | basename }} {{ f.size }}
+      {% endfor %}
+    dest: "{{ system_copy_export_path }}/MANIFEST.txt"
+    mode: "0644"
+  when: export_files.files | length > 0
+
+- name: Persist export location for transfer playbook
+  ansible.builtin.set_stats:
+    data:
+      sap_database_type: "{{ sap_database_type }}"
+      system_copy_export_path: "{{ system_copy_export_path }}"
+      system_copy_export_file_count: "{{ export_files.files | default([]) | length }}"
+    aggregate: false

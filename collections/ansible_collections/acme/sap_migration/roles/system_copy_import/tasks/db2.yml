@@ -1,0 +1,60 @@
+---
+- name: Restore Db2 database from backup in export path
+  ansible.builtin.command:
+    argv:
+      - db2
+      - restore database
+      - "{{ sap_db2_database }}"
+      - from
+      - "{{ system_copy_export_path }}"
+      - taken at
+      - "{{ db2_restore_timestamp | default('') }}"
+      - into
+      - "{{ sap_db2_database }}"
+      - logtarget
+      - "{{ system_copy_export_path }}"
+  become: true
+  become_user: "{{ sap_db2_instance }}"
+  register: db2_restore
+  changed_when: db2_restore.rc == 0
+  when:
+    - not sap_migration_dry_run | bool
+    - system_copy_import_method == db2_restore
+    - db2_restore_timestamp | default('') | length > 0
+
+- name: Restore Db2 database (without explicit timestamp — latest in path)
+  ansible.builtin.shell: |
+    set -euo pipefail
+    latest="$(ls -1t {{ system_copy_export_path }}/*.bak 2>/dev/null | head -1 || true)"
+    if [ -z "$latest" ]; then
+      db2 restore database {{ sap_db2_database }} from {{ system_copy_export_path }} into {{ sap_db2_database }}
+    else
+      db2 restore database {{ sap_db2_database }} from "$latest" into {{ sap_db2_database }}
+    fi
+  args:
+    executable: /bin/bash
+  become: true
+  become_user: "{{ sap_db2_instance }}"
+  register: db2_restore_auto
+  changed_when: db2_restore_auto.rc == 0
+  when:
+    - not sap_migration_dry_run | bool
+    - system_copy_import_method == db2_restore
+    - db2_restore_timestamp | default('') | length == 0
+
+- name: Run SWPM homogeneous import for Db2 landscape
+  ansible.builtin.command:
+    argv:
+      - "{{ sap_swpm_dir | default('/sapmedia/SWPM') }}/sapinst"
+      - IMPORT
+      - -sid
+      - "{{ sap_sid }}"
+      - -importDir
+      - "{{ system_copy_export_path }}"
+  become: true
+  become_user: "{{ sap_sid | lower }}adm"
+  register: swpm_import_db2
+  changed_when: swpm_import_db2.rc == 0
+  when:
+    - not sap_migration_dry_run | bool
+    - system_copy_import_method == swpm_homogeneous

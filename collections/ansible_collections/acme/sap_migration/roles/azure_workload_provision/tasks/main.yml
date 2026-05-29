@@ -1,0 +1,104 @@
+---
+- name: Validate Azure resource group name
+  ansible.builtin.assert:
+    that:
+      - azure_workload_resource_group | length > 0
+    fail_msg: Set azure_resource_group or AZURE_RESOURCE_GROUP.
+
+- name: Check if resource group already exists
+  azure.azcollection.azure_rm_resourcegroup_info:
+    name: "{{ azure_workload_resource_group }}"
+  register: azure_rg_info
+  when: azure_workload_state == 'present'
+
+- name: Create resource group when it does not exist
+  azure.azcollection.azure_rm_resourcegroup:
+    name: "{{ azure_workload_resource_group }}"
+    location: "{{ azure_workload_location }}"
+    tags: "{{ azure_workload_common_tags }}"
+    state: present
+  when:
+    - azure_workload_state == 'present'
+    - azure_rg_info.resourcegroups | default([]) | length == 0
+
+- name: Remember requested Azure region before adopting existing resource group
+  ansible.builtin.set_fact:
+    azure_workload_location_requested: "{{ azure_workload_location }}"
+  when:
+    - azure_workload_state == 'present'
+    - azure_rg_info.resourcegroups | default([]) | length > 0
+
+- name: Adopt existing resource group region for new resources
+  ansible.builtin.set_fact:
+    azure_workload_location: "{{ azure_rg_info.resourcegroups[0].location }}"
+  when:
+    - azure_workload_state == 'present'
+    - azure_rg_info.resourcegroups | default([]) | length > 0
+
+- name: Notify when requested region differs from existing resource group
+  ansible.builtin.debug:
+    msg: >-
+      Resource group '{{ azure_workload_resource_group }}' already exists in
+      '{{ azure_workload_location }}'. Ignoring requested region
+      '{{ azure_workload_location_requested }}' — all new VMs/VNet deploy there.
+  when:
+    - azure_workload_state == 'present'
+    - azure_rg_info.resourcegroups | default([]) | length > 0
+    - azure_workload_location_requested | default(azure_workload_location) | lower != azure_workload_location | lower
+
+- name: Update tags on existing resource group (do not change location)
+  azure.azcollection.azure_rm_resourcegroup:
+    name: "{{ azure_workload_resource_group }}"
+    tags: "{{ azure_workload_common_tags }}"
+    state: present
+  when:
+    - azure_workload_state == 'present'
+    - azure_rg_info.resourcegroups | default([]) | length > 0
+
+- name: Create virtual network and subnet
+  when:
+    - azure_workload_create_network | bool
+    - azure_workload_state == 'present'
+  block:
+    - name: Create VNet
+      azure.azcollection.azure_rm_virtualnetwork:
+        resource_group: "{{ azure_workload_resource_group }}"
+        name: "{{ azure_workload_vnet_name }}"
+        address_prefixes:
+          - "{{ azure_workload_vnet_cidr }}"
+        tags: "{{ azure_workload_common_tags }}"
+        state: present
+
+    - name: Create subnet
+      azure.azcollection.azure_rm_subnet:
+        resource_group: "{{ azure_workload_resource_group }}"
+        name: "{{ azure_workload_subnet_name }}"
+        address_prefix: "{{ azure_workload_subnet_cidr }}"
+        virtual_network: "{{ azure_workload_vnet_name }}"
+        state: present
+
+- name: Resolve VNet for NIC attachment
+  ansible.builtin.set_fact:
+    azure_workload_vnet_ref: "{{ azure_workload_vnet_name }}"
+  when: azure_workload_create_network | bool
+
+- name: Provision each SAP-shaped workload VM
+  ansible.builtin.include_tasks: provision_vm.yml
+  loop: "{{ azure_workload_vms }}"
+  loop_control:
+    loop_var: workload_vm
+    label: "{{ workload_vm.name }}"
+
+- name: Build provisioned host summary
+  ansible.builtin.set_stats:
+    data:
+      azure_workload_resource_group: "{{ azure_workload_resource_group }}"
+      azure_workload_vm_names: "{{ azure_provisioned_workloads | map(attribute='name') | list }}"
+      azure_workload_public_ips: "{{ azure_provisioned_workloads | map(attribute='public_ip') | list }}"
+    aggregate: false
+  when: azure_workload_state == 'present'
+
+- name: Display provisioned workloads
+  ansible.builtin.debug:
+    var: azure_provisioned_workloads
+  when: azure_workload_state == 'present'

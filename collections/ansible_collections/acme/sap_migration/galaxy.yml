@@ -1,0 +1,29 @@
+---
+namespace: acme
+name: sap_migration
+version: 1.0.0
+readme: README.md
+authors:
+  - SAP Migration Team
+description: >-
+  Orchestrates clustered SAP workload migration from Azure to GCP using
+  greenfield GCP build and SAP system copy export/import via AAP.
+license:
+  - Apache-2.0
+tags:
+  - sap
+  - migration
+  - azure
+  - gcp
+  - cloud
+dependencies:
+  redhat.sap_install: '>=1.2.0'
+  sap.sap_operations: '>=1.0.0'
+  azure.azcollection: '>=2.0.0'
+  google.cloud: '>=1.0.0'
+  cloud.gcp_ops: '>=1.0.0'
+  ansible.platform: '>=2.5.0'
+  community.general: '>=8.0.0'
+  community.sap_libs: '>=1.4.0'
+repository: https://github.com/example/sap-azure-gcp-migration
+build_ignore: []

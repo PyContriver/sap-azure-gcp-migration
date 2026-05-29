@@ -1,0 +1,46 @@
+---
+# SAP HANA distributed + HA cluster topology (S/4HANA)
+
+sap_ha_cluster_enabled: true
+sap_database_type: hana
+
+sap_cluster_nodes:
+  hana_primary:
+    role: hana_primary
+    machine_type: n2-highmem-32
+    data_disk_gb: 512
+    log_disk_gb: 256
+  hana_secondary:
+    role: hana_secondary
+    machine_type: n2-highmem-32
+    data_disk_gb: 512
+    log_disk_gb: 256
+  ascs:
+    role: ascs
+    machine_type: n2-standard-8
+    data_disk_gb: 128
+  ers:
+    role: ers
+    machine_type: n2-standard-8
+    data_disk_gb: 128
+  aas:
+    role: aas
+    machine_type: n2-standard-16
+    data_disk_gb: 128
+
+sap_cluster_vips:
+  hana_vip: 10.20.0.10
+  nw_vip: 10.20.0.11
+
+sap_hsr_mode: syncmem
+sap_hsr_operation_mode: logreplay
+
+system_copy_export_method: swpm_homogeneous
+system_copy_import_method: swpm_homogeneous
+
+sap_stop_order:
+  - aas
+  - ers
+  - ascs
+  - hana_secondary
+  - hana_primary

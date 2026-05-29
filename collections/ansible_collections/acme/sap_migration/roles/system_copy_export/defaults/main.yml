@@ -1,0 +1,10 @@
+---
+sap_stop_order:
+  - aas
+  - ers
+  - ascs
+  - hana_secondary
+  - hana_primary
+
+# Overridden per profile: db2_online_backup (db2) or swpm_homogeneous (hana)
+system_copy_export_method: db2_online_backup

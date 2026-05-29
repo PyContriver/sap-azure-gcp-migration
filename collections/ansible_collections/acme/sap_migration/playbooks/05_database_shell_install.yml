@@ -1,0 +1,27 @@
+---
+- name: SAP Migration | IBM Db2 shell install on GCP
+  hosts: db2_primary:db2_secondary
+  become: true
+  vars_files:
+    - ../inventory/group_vars/all.yml
+    - ../inventory/group_vars/sap_ha_cluster.yml
+    - ../inventory/group_vars/profiles/{{ sap_database_type }}_ha.yml
+  roles:
+    - acme.sap_migration.db2_shell_install
+  when: sap_database_type == 'db2'
+
+- name: SAP Migration | HANA shell install on GCP
+  hosts: hana_primary:hana_secondary
+  become: true
+  vars_files:
+    - ../inventory/group_vars/all.yml
+    - ../inventory/group_vars/sap_ha_cluster.yml
+    - ../inventory/group_vars/profiles/{{ sap_database_type }}_ha.yml
+  tasks:
+    - name: Install empty HANA database shell (same SID/instance as source)
+      ansible.builtin.include_role:
+        name: redhat.sap_install.sap_hana_install
+      vars:
+        sap_hana_install_sid: "{{ sap_sid }}"
+        sap_hana_install_instance_nr: "{{ sap_hana_instance_nr }}"
+  when: sap_database_type == 'hana'

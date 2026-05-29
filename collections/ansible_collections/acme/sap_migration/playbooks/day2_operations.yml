@@ -1,0 +1,22 @@
+---
+# Day 2 operations — run after cutover on GCP SAP landscape
+#
+# Examples:
+#   Full run:     ansible-playbook day2_operations.yml
+#   Health only:  ansible-playbook day2_operations.yml --tags day2_health
+#   Backup only:  ansible-playbook day2_operations.yml --tags day2_backup -e day2_backint_action=backup
+#   Setup backup: ansible-playbook day2_operations.yml --tags day2_backup -e day2_backint_setup_if_missing=true
+
+- name: SAP Migration | Day 2 operations (GCP steady state)
+  hosts: gcp_sap
+  become: true
+  gather_facts: true
+  vars_files:
+    - ../inventory/group_vars/all.yml
+    - ../inventory/group_vars/sap_ha_cluster.yml
+    - ../inventory/group_vars/profiles/{{ sap_database_type }}_ha.yml
+    - ../inventory/group_vars/day2_operations.yml
+  roles:
+    - role: acme.sap_migration.day2_operations
+      tags:
+        - day2

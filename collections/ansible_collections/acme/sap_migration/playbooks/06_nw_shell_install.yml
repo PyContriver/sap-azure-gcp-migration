@@ -1,0 +1,35 @@
+---
+- name: SAP Migration | NetWeaver shell install on GCP
+  hosts: ascs:ers:aas
+  become: true
+  vars_files:
+    - ../inventory/group_vars/all.yml
+    - ../inventory/group_vars/sap_ha_cluster.yml
+    - ../inventory/group_vars/profiles/{{ sap_database_type }}_ha.yml
+  tasks:
+    - name: Install ASCS instance shell via SWPM
+      ansible.builtin.include_role:
+        name: redhat.sap_install.sap_swpm
+      vars:
+        sap_swpm_sid: "{{ sap_sid }}"
+        sap_swpm_instance_nr: "{{ sap_instance_nr }}"
+        sap_swpm_product: ascs
+      when: sap_node_role == 'ascs'
+
+    - name: Install ERS instance shell via SWPM
+      ansible.builtin.include_role:
+        name: redhat.sap_install.sap_swpm
+      vars:
+        sap_swpm_sid: "{{ sap_sid }}"
+        sap_swpm_instance_nr: "{{ sap_instance_nr }}"
+        sap_swpm_product: ers
+      when: sap_node_role == 'ers'
+
+    - name: Install AAS instance shell via SWPM
+      ansible.builtin.include_role:
+        name: redhat.sap_install.sap_swpm
+      vars:
+        sap_swpm_sid: "{{ sap_sid }}"
+        sap_swpm_instance_nr: "{{ sap_instance_nr }}"
+        sap_swpm_product: aas
+      when: sap_node_role == 'aas'

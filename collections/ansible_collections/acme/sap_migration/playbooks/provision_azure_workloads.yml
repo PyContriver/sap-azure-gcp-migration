@@ -1,0 +1,25 @@
+---
+# Provision SAP-shaped placeholder workloads on Azure (dev/test source landscape).
+#
+# Add:    ./scripts/azure_add_workloads.sh -g my-sap-rg -s DEV
+# Remove: ./scripts/azure_add_workloads.sh -g my-sap-rg --destroy
+
+- name: SAP Migration | Azure workloads (provision or destroy)
+  hosts: localhost
+  gather_facts: false
+  vars_files:
+    - ../inventory/group_vars/all.yml
+    - ../inventory/group_vars/azure_workloads.yml
+  tasks:
+    - name: Destroy Azure SAP-shaped workloads
+      ansible.builtin.include_role:
+        name: acme.sap_migration.azure_workload_provision
+        tasks_from: destroy_all.yml
+      vars:
+        azure_workload_state: absent
+      when: azure_workload_action | default('provision') == 'destroy'
+
+    - name: Provision Azure SAP-shaped workloads
+      ansible.builtin.include_role:
+        name: acme.sap_migration.azure_workload_provision
+      when: azure_workload_action | default('provision') != 'destroy'

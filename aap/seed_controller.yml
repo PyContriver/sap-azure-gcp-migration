@@ -1,0 +1,53 @@
+---
+# Seed AAP Controller resources from workflow_job_template.yml definition.
+# Requires ansible.platform collection and controller admin credentials.
+
+- name: Seed SAP Migration AAP resources
+  hosts: localhost
+  gather_facts: false
+  vars_files:
+    - workflow_job_template.yml
+  vars:
+    controller_host: "{{ lookup('env', 'CONTROLLER_HOST') }}"
+    controller_username: "{{ lookup('env', 'CONTROLLER_USERNAME') | default('admin', true) }}"
+    controller_password: "{{ lookup('env', 'CONTROLLER_PASSWORD') }}"
+    controller_validate_certs: false
+  tasks:
+    - name: Validate controller connection variables
+      ansible.builtin.assert:
+        that:
+          - controller_host | length > 0
+          - controller_password | length > 0
+        fail_msg: >-
+          Set CONTROLLER_HOST and CONTROLLER_PASSWORD environment variables.
+
+    - name: Display workflow definition summary
+      ansible.builtin.debug:
+        msg:
+          - "Workflow: {{ workflow_job_template.name }}"
+          - "Job templates: {{ job_templates | map(attribute='name') | list }}"
+          - "Approval nodes: {{ workflow_nodes | selectattr('approval_node', 'defined') | map(attribute='name') | list }}"
+
+    - name: Create job templates on controller
+      ansible.builtin.include_role:
+        name: ansible.platform.job_template
+      vars:
+        job_template_name: "{{ item.name }}"
+        job_template_playbook: "{{ item.playbook }}"
+        job_template_inventory: "{{ item.inventory }}"
+        job_template_execution_environment: "{{ item.execution_environment }}"
+        job_template_organization: "{{ workflow_job_template.organization }}"
+        job_template_survey_enabled: false
+        job_template_ask_variables_on_launch: true
+      loop: "{{ job_templates }}"
+      loop_control:
+        label: "{{ item.name }}"
+      when: seed_job_templates | default(true) | bool
+
+    - name: Note on workflow creation
+      ansible.builtin.debug:
+        msg: >-
+          Workflow nodes with approval gates are defined in workflow_job_template.yml.
+          Create the Workflow Job Template in AAP UI or via controller API using
+          the node graph: prerequisites → ... → approval_export → export → ...
+          See docs/workflow_survey.md for survey variable mapping.

@@ -1,0 +1,10 @@
+---
+- name: SAP Migration | GCP landing zone
+  hosts: localhost
+  gather_facts: false
+  vars_files:
+    - ../inventory/group_vars/all.yml
+    - ../inventory/group_vars/sap_ha_cluster.yml
+    - ../inventory/group_vars/profiles/{{ sap_database_type }}_ha.yml
+  roles:
+    - acme.sap_migration.gcp_landing_zone

@@ -1,0 +1,46 @@
+---
+- name: Download export artifacts from GCS to GCP import staging path
+  ansible.builtin.command:
+    argv:
+      - gsutil
+      - -m
+      - rsync
+      - -r
+      - "gs://{{ system_copy_gcs_bucket }}/{{ system_copy_gcs_prefix }}/"
+      - "{{ system_copy_export_path }}/"
+  register: gcs_download
+  changed_when: "'Copying' in gcs_download.stdout or gcs_download.rc == 0"
+  when: not sap_migration_dry_run | bool
+
+- name: Verify export manifest exists
+  ansible.builtin.stat:
+    path: "{{ system_copy_export_path }}/MANIFEST.txt"
+  register: export_manifest
+
+- name: Fail when export manifest missing
+  ansible.builtin.fail:
+    msg: "Export manifest not found at {{ system_copy_export_path }}/MANIFEST.txt"
+  when: not export_manifest.stat.exists
+
+- name: Import database — IBM Db2 path
+  ansible.builtin.include_tasks: db2.yml
+  when: sap_database_type == 'db2'
+
+- name: Import database — SAP HANA path
+  ansible.builtin.include_tasks: hana.yml
+  when: sap_database_type == 'hana'
+
+- name: Start SAP services after import
+  ansible.builtin.include_role:
+    name: sap.sap_operations.sap_control
+  vars:
+    sap_control_action: start
+    sap_control_instance: "{{ sap_instance_nr }}"
+  when: not sap_migration_dry_run | bool
+
+- name: Persist import completion status
+  ansible.builtin.set_stats:
+    data:
+      sap_database_type: "{{ sap_database_type }}"
+      system_copy_import_complete: true
+    aggregate: false

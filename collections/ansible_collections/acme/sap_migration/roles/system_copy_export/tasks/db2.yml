@@ -1,0 +1,49 @@
+---
+- name: Stop Db2 database for offline export (when not using online backup)
+  ansible.builtin.command:
+    argv:
+      - db2
+      - deactivate database
+      - "{{ sap_db2_database }}"
+  become: true
+  become_user: "{{ sap_db2_instance }}"
+  register: db2_deactivate
+  changed_when: db2_deactivate.rc == 0
+  when:
+    - not sap_migration_dry_run | bool
+    - system_copy_export_method == db2_offline_backup
+
+- name: Run Db2 online backup to export path
+  ansible.builtin.command:
+    argv:
+      - db2
+      - backup database
+      - "{{ sap_db2_database }}"
+      - online
+      - to
+      - "{{ system_copy_export_path }}"
+      - include logs
+  become: true
+  become_user: "{{ sap_db2_instance }}"
+  register: db2_backup
+  changed_when: db2_backup.rc == 0
+  when:
+    - not sap_migration_dry_run | bool
+    - system_copy_export_method == db2_online_backup
+
+- name: Run SWPM homogeneous export for Db2 landscape
+  ansible.builtin.command:
+    argv:
+      - "{{ sap_swpm_dir | default('/sapmedia/SWPM') }}/sapinst"
+      - EXPORT
+      - -sid
+      - "{{ sap_sid }}"
+      - -exportDir
+      - "{{ system_copy_export_path }}"
+  become: true
+  become_user: "{{ sap_sid | lower }}adm"
+  register: swpm_export_db2
+  changed_when: swpm_export_db2.rc == 0
+  when:
+    - not sap_migration_dry_run | bool
+    - system_copy_export_method == swpm_homogeneous

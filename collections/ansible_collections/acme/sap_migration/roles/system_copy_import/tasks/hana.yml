@@ -1,0 +1,32 @@
+---
+- name: Run SWPM homogeneous import (HANA landscape)
+  ansible.builtin.command:
+    argv:
+      - "{{ sap_swpm_dir | default('/sapmedia/SWPM') }}/sapinst"
+      - IMPORT
+      - -sid
+      - "{{ sap_sid }}"
+      - -importDir
+      - "{{ system_copy_export_path }}"
+  become: true
+  become_user: "{{ sap_sid | lower }}adm"
+  register: swpm_import
+  changed_when: swpm_import.rc == 0
+  when:
+    - not sap_migration_dry_run | bool
+    - system_copy_import_method == swpm_homogeneous
+
+- name: Run HANA recover from backup
+  ansible.builtin.command:
+    argv:
+      - hdbsql
+      - -U
+      - BACKUP
+      - "RECOVER DATA USING FILE ('{{ system_copy_export_path }}/hana_backup')"
+  become: true
+  become_user: "{{ sap_sid | lower }}adm"
+  register: hana_recover
+  changed_when: hana_recover.rc == 0
+  when:
+    - not sap_migration_dry_run | bool
+    - system_copy_import_method == hana_backup

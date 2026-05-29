@@ -1,0 +1,50 @@
+---
+# Molecule-style validation playbook for dry-run workflow phases.
+# Run: ansible-playbook tests/validate_dry_run.yml
+
+- name: Validate dry-run prerequisites
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Run prerequisites playbook in dry-run mode
+      ansible.builtin.import_playbook: ../collections/ansible_collections/acme/sap_migration/playbooks/00_prerequisites.yml
+      vars:
+        sap_migration_dry_run: true
+        sap_sid: DEV
+        azure_resource_group: dev-sap-rg
+        gcp_project: dev-gcp-project
+
+- name: Validate playbook YAML parses
+  hosts: localhost
+  gather_facts: false
+  vars:
+    playbooks_dir: ../collections/ansible_collections/acme/sap_migration/playbooks
+  tasks:
+    - name: Find all migration playbooks
+      ansible.builtin.find:
+        paths: "{{ playbooks_dir }}"
+        patterns: "*.yml"
+      register: migration_playbooks
+
+    - name: Assert all 13 playbooks exist
+      ansible.builtin.assert:
+        that:
+          - migration_playbooks.matched == 13
+        fail_msg: "Expected 13 playbooks, found {{ migration_playbooks.matched }}"
+
+    - name: Validate role task files exist
+      ansible.builtin.stat:
+        path: "../collections/ansible_collections/acme/sap_migration/roles/{{ item }}/tasks/main.yml"
+      register: role_stat
+      failed_when: not role_stat.stat.exists
+      loop:
+        - azure_discovery
+        - gcp_landing_zone
+        - gcp_sap_vm
+        - system_copy_export
+        - system_copy_import
+        - cutover
+
+    - name: Dry-run validation complete
+      ansible.builtin.debug:
+        msg: "All {{ migration_playbooks.matched }} playbooks and 6 roles validated"

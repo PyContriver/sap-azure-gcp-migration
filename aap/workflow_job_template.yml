@@ -1,0 +1,272 @@
+---
+# Seed data for AAP Workflow Job Template — SAP Azure→GCP Migration
+# Apply via ansible.platform or awx awx-cli / Controller API.
+#
+# Usage:
+#   ansible-playbook aap/seed_controller.yml -e controller_host=... -e controller_token=...
+
+workflow_job_template:
+  name: "SAP Azure to GCP Migration"
+  description: >-
+    End-to-end workflow for clustered SAP migration from Azure to GCP using
+    greenfield build and system copy export/import.
+  organization: Default
+  survey_enabled: true
+  ask_variables_on_launch: true
+  allow_simultaneous: false
+
+survey_spec:
+  name: "SAP Migration Survey"
+  description: "Variables for Azure→GCP SAP migration"
+  spec:
+    - variable: migration_name
+      question_name: Migration name
+      type: text
+      required: true
+      default: sap-migration-demo
+    - variable: sap_sid
+      question_name: SAP System ID
+      type: text
+      required: true
+      min: 3
+      max: 3
+    - variable: sap_instance_nr
+      question_name: ABAP instance number
+      type: text
+      required: true
+      default: "00"
+    - variable: sap_database_type
+      question_name: Database type
+      type: multiplechoice
+      required: true
+      default: db2
+      choices:
+        - db2
+        - hana
+    - variable: sap_hana_instance_nr
+      question_name: HANA instance number (hana only)
+      type: text
+      required: false
+      default: "00"
+    - variable: sap_db2_instance
+      question_name: Db2 instance name (db2 only)
+      type: text
+      required: false
+      default: db2inst1
+    - variable: azure_subscription_id
+      question_name: Azure subscription ID
+      type: text
+      required: true
+    - variable: azure_resource_group
+      question_name: Azure resource group
+      type: text
+      required: true
+    - variable: azure_location
+      question_name: Azure location
+      type: text
+      required: true
+      default: eastus
+    - variable: gcp_project
+      question_name: GCP project ID
+      type: text
+      required: true
+    - variable: gcp_region
+      question_name: GCP region
+      type: text
+      required: true
+      default: us-central1
+    - variable: gcp_zone
+      question_name: GCP zone
+      type: text
+      required: true
+      default: us-central1-a
+    - variable: sap_migration_dry_run
+      question_name: Dry run mode
+      type: multiplechoice
+      required: true
+      default: "false"
+      choices:
+        - "true"
+        - "false"
+    - variable: sap_migration_skip_decommission
+      question_name: Skip Azure decommission
+      type: multiplechoice
+      required: true
+      default: "true"
+      choices:
+        - "true"
+        - "false"
+
+job_templates:
+  - name: "00 SAP Migration Prerequisites"
+    playbook: playbooks/00_prerequisites.yml
+    inventory: SAP Migration
+    execution_environment: SAP Migration EE
+  - name: "01 SAP Azure Discovery"
+    playbook: playbooks/01_azure_discovery.yml
+    inventory: SAP Migration
+    execution_environment: SAP Migration EE
+  - name: "02 SAP GCP Landing Zone"
+    playbook: playbooks/02_gcp_landing_zone.yml
+    inventory: SAP Migration
+    execution_environment: SAP Migration EE
+  - name: "03 SAP GCP Provision VMs"
+    playbook: playbooks/03_gcp_provision_vms.yml
+    inventory: SAP Migration
+    execution_environment: SAP Migration EE
+  - name: "04 SAP OS Preconfigure"
+    playbook: playbooks/04_os_preconfigure.yml
+    inventory: SAP Migration GCP
+    execution_environment: SAP Migration EE
+  - name: "05 SAP Database Shell Install"
+    playbook: playbooks/05_database_shell_install.yml
+    inventory: SAP Migration GCP
+    execution_environment: SAP Migration EE
+  - name: "06 SAP NW Shell Install"
+    playbook: playbooks/06_nw_shell_install.yml
+    inventory: SAP Migration GCP
+    execution_environment: SAP Migration EE
+  - name: "07 SAP HA Cluster Build"
+    playbook: playbooks/07_ha_cluster_build.yml
+    inventory: SAP Migration GCP
+    execution_environment: SAP Migration EE
+  - name: "08 SAP System Copy Export"
+    playbook: playbooks/08_system_copy_export.yml
+    inventory: SAP Migration Azure
+    execution_environment: SAP Migration EE
+  - name: "09 SAP Transfer to GCS"
+    playbook: playbooks/09_transfer_to_gcs.yml
+    inventory: SAP Migration
+    execution_environment: SAP Migration EE
+  - name: "10 SAP System Copy Import"
+    playbook: playbooks/10_system_copy_import.yml
+    inventory: SAP Migration GCP
+    execution_environment: SAP Migration EE
+  - name: "11 SAP Validate and Cutover"
+    playbook: playbooks/11_validate_cutover.yml
+    inventory: SAP Migration GCP
+    execution_environment: SAP Migration EE
+  - name: "12 SAP Azure Decommission"
+    playbook: playbooks/12_azure_decommission.yml
+    inventory: SAP Migration
+    execution_environment: SAP Migration EE
+  - name: "Day2 SAP Operations (GCP)"
+    playbook: playbooks/day2_operations.yml
+    inventory: SAP Migration GCP
+    execution_environment: SAP Migration EE
+
+day2_job_schedules:
+  - job_template: "Day2 SAP Operations (GCP)"
+    name: "SAP Day2 Health Check"
+    enabled: true
+    rrule:
+      frequency: hourly
+      interval: 4
+    extra_vars:
+      day2_operation: health
+    tags: day2_health
+  - job_template: "Day2 SAP Operations (GCP)"
+    name: "SAP Day2 HANA Backup"
+    enabled: true
+    rrule:
+      frequency: daily
+      interval: 1
+      byhour: [2]
+    extra_vars:
+      day2_backint_action: backup
+    tags: day2_backup
+  - job_template: "Day2 SAP Operations (GCP)"
+    name: "SAP Day2 Firewall Audit"
+    enabled: true
+    rrule:
+      frequency: weekly
+      interval: 1
+    extra_vars:
+      day2_firewall_remediate: false
+    tags: day2_firewall
+
+workflow_nodes:
+  - identifier: prerequisites
+    unified_job_template: "00 SAP Migration Prerequisites"
+    success_nodes:
+      - azure_discovery
+  - identifier: azure_discovery
+    unified_job_template: "01 SAP Azure Discovery"
+    success_nodes:
+      - gcp_landing_zone
+  - identifier: gcp_landing_zone
+    unified_job_template: "02 SAP GCP Landing Zone"
+    success_nodes:
+      - gcp_provision_vms
+  - identifier: gcp_provision_vms
+    unified_job_template: "03 SAP GCP Provision VMs"
+    success_nodes:
+      - os_preconfigure
+  - identifier: os_preconfigure
+    unified_job_template: "04 SAP OS Preconfigure"
+    success_nodes:
+      - hana_shell
+  - identifier: hana_shell
+    unified_job_template: "05 SAP Database Shell Install"
+    success_nodes:
+      - nw_shell
+  - identifier: nw_shell
+    unified_job_template: "06 SAP NW Shell Install"
+    success_nodes:
+      - ha_cluster
+  - identifier: ha_cluster
+    unified_job_template: "07 SAP HA Cluster Build"
+    success_nodes:
+      - approval_export
+  - identifier: approval_export
+    approval_node: true
+    name: "Approve system copy export"
+    success_nodes:
+      - system_copy_export
+  - identifier: system_copy_export
+    unified_job_template: "08 SAP System Copy Export"
+    success_nodes:
+      - transfer_gcs
+  - identifier: transfer_gcs
+    unified_job_template: "09 SAP Transfer to GCS"
+    success_nodes:
+      - system_copy_import
+  - identifier: system_copy_import
+    unified_job_template: "10 SAP System Copy Import"
+    success_nodes:
+      - approval_cutover
+  - identifier: approval_cutover
+    approval_node: true
+    name: "Approve production cutover"
+    success_nodes:
+      - validate_cutover
+  - identifier: validate_cutover
+    unified_job_template: "11 SAP Validate and Cutover"
+    success_nodes:
+      - approval_decommission
+  - identifier: approval_decommission
+    approval_node: true
+    name: "Approve Azure decommission"
+    success_nodes:
+      - azure_decommission
+  - identifier: azure_decommission
+    unified_job_template: "12 SAP Azure Decommission"
+
+credentials:
+  - name: Azure SAP Migration
+    credential_type: Microsoft Azure Resource Manager
+  - name: GCP SAP Migration
+    credential_type: Google Cloud Platform
+  - name: SAP SSH
+    credential_type: Machine
+
+inventories:
+  - name: SAP Migration
+    description: Localhost controller jobs
+    hosts:
+      - localhost
+  - name: SAP Migration Azure
+    description: Azure SAP cluster (dynamic azure_rm inventory)
+    source: azure_rm
+  - name: SAP Migration GCP
+    description: GCP SAP cluster (populated by playbook 03 add_host)

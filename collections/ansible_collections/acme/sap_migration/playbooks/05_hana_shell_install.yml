@@ -1,0 +1,3 @@
+---
+# Deprecated alias — use 05_database_shell_install.yml with sap_database_type=hana|db2
+- ansible.builtin.import_playbook: 05_database_shell_install.yml

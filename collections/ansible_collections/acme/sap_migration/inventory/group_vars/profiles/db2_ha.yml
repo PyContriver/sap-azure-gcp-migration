@@ -1,0 +1,53 @@
+---
+# IBM Db2 distributed + HA cluster topology (ECC / NetWeaver AnyDB)
+
+sap_ha_cluster_enabled: true
+sap_database_type: db2
+
+sap_cluster_nodes:
+  db2_primary:
+    role: db2_primary
+    machine_type: n2-highmem-16
+    data_disk_gb: 512
+    log_disk_gb: 256
+  db2_secondary:
+    role: db2_secondary
+    machine_type: n2-highmem-16
+    data_disk_gb: 512
+    log_disk_gb: 256
+  ascs:
+    role: ascs
+    machine_type: n2-standard-8
+    data_disk_gb: 128
+  ers:
+    role: ers
+    machine_type: n2-standard-8
+    data_disk_gb: 128
+  aas:
+    role: aas
+    machine_type: n2-standard-16
+    data_disk_gb: 128
+
+sap_cluster_vips:
+  db2_vip: 10.20.0.10
+  nw_vip: 10.20.0.11
+
+sap_db2_instance: db2inst1
+sap_db2_port: 50000
+sap_db2_database: "{{ sap_sid }}"
+sap_db2_hadr_enabled: true
+sap_db2_export_path: "/db2/{{ sap_db2_instance }}/export"
+
+sap_pacemaker_fence_agent: fence_gce
+sap_pacemaker_fence_options: "project={{ gcp_project }}"
+
+system_copy_export_path: "{{ sap_db2_export_path }}"
+system_copy_export_method: db2_online_backup
+system_copy_import_method: db2_restore
+
+sap_stop_order:
+  - aas
+  - ers
+  - ascs
+  - db2_secondary
+  - db2_primary

@@ -1,0 +1,320 @@
+---
+# Provision all AAP objects for the SAP Azure→GCP Migration pipeline.
+#
+# Usage:
+#   source scripts/load-env.sh && ./scripts/setup-aap.sh
+#
+# Cloud credentials (Azure/GCP/SSH) are created only when env vars are set.
+# Re-run with --tags credentials after filling those in .env.
+
+- name: Provision SAP Azure→GCP Migration on AAP
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  module_defaults:
+    group/ansible.controller.controller:
+      controller_host: "{{ aap_controller_host }}"
+      controller_username: "{{ aap_controller_username | default(omit, true) }}"
+      controller_password: "{{ aap_controller_password | default(omit, true) }}"
+      controller_oauthtoken: "{{ aap_controller_token | default(omit, true) }}"
+      validate_certs: "{{ aap_verify_ssl }}"
+  vars_files:
+    - aap_setup_vars.yml
+  vars:
+    _azure_ready: >-
+      {{
+        lookup('env', 'AZURE_SUBSCRIPTION_ID') | length > 0
+        and lookup('env', 'AZURE_CLIENT_ID') | length > 0
+        and lookup('env', 'AZURE_CLIENT_SECRET') | length > 0
+        and lookup('env', 'AZURE_TENANT_ID') | length > 0
+      }}
+    _gcp_ready: >-
+      {{
+        lookup('env', 'GCP_SERVICE_ACCOUNT_FILE') | length > 0
+        and lookup('env', 'GCP_SERVICE_ACCOUNT_FILE') | expandvars is file
+        and lookup('env', 'GCP_PROJECT') | length > 0
+      }}
+    _ssh_ready: >-
+      {{
+        lookup('env', 'SSH_PRIVATE_KEY_FILE') | length > 0
+        and lookup('env', 'SSH_PRIVATE_KEY_FILE') | expandvars is file
+      }}
+
+  tasks:
+
+    # ── Validate controller connection ──────────────────────────────────────
+    - name: Require controller connection settings
+      ansible.builtin.assert:
+        that:
+          - aap_controller_host | length > 0
+          - (aap_controller_token | length > 0)
+            or (aap_controller_username | length > 0 and aap_controller_password | length > 0)
+        fail_msg: Set CONTROLLER_HOST and CONTROLLER_OAUTH_TOKEN (or USERNAME+PASSWORD) in .env.
+      tags: [always]
+
+    - name: Report credential readiness
+      ansible.builtin.debug:
+        msg:
+          azure_credentials_ready: "{{ _azure_ready }}"
+          gcp_credentials_ready: "{{ _gcp_ready }}"
+          ssh_credentials_ready: "{{ _ssh_ready }}"
+          note: "Fill AZURE_*, GCP_*, SSH_* in .env and re-run --tags credentials to create cloud credentials."
+      tags: [always]
+
+    # ── Execution Environment ───────────────────────────────────────────────
+    - name: Register execution environment
+      ansible.controller.execution_environment:
+        name: "{{ aap_ee_name }}"
+        image: "{{ aap_ee_image }}"
+        pull: always
+        organization: "{{ aap_organization }}"
+        state: present
+      tags: [ee, aap_setup]
+
+    # ── Credentials (skipped when env vars not set) ──────────────────────
+    - name: Create Azure credential
+      when: _azure_ready | bool
+      ansible.controller.credential:
+        name: "{{ aap_credential_azure_name }}"
+        description: Azure service principal for SAP source system discovery
+        organization: "{{ aap_organization }}"
+        credential_type: Microsoft Azure Resource Manager
+        inputs:
+          subscription: "{{ lookup('env', 'AZURE_SUBSCRIPTION_ID') }}"
+          client: "{{ lookup('env', 'AZURE_CLIENT_ID') }}"
+          secret: "{{ lookup('env', 'AZURE_CLIENT_SECRET') }}"
+          tenant: "{{ lookup('env', 'AZURE_TENANT_ID') }}"
+        state: present
+      no_log: true
+      tags: [credentials, aap_setup]
+
+    - name: Warn — Azure credential skipped (env vars not set)
+      when: not (_azure_ready | bool)
+      ansible.builtin.debug:
+        msg: "Skipping Azure credential — set AZURE_SUBSCRIPTION_ID/CLIENT_ID/CLIENT_SECRET/TENANT_ID in .env"
+      tags: [credentials, aap_setup]
+
+    # GCP: google.cloud modules use GCP_AUTH_KIND + GOOGLE_APPLICATION_CREDENTIALS env vars.
+    # Create a custom credential type that injects these as env vars at job runtime.
+    - name: Create GCP custom credential type
+      ansible.controller.credential_type:
+        name: GCP Service Account (google.cloud)
+        description: Injects GCP_AUTH_KIND and GOOGLE_APPLICATION_CREDENTIALS for google.cloud modules
+        kind: cloud
+        inputs:
+          fields:
+            - id: gcp_project
+              label: GCP Project ID
+              type: string
+            - id: gcp_service_account_json
+              label: GCP Service Account JSON
+              type: string
+              secret: true
+              multiline: true
+        injectors:
+          env:
+            GCP_AUTH_KIND: serviceaccount
+            GCP_PROJECT: "{% raw %}{{ gcp_project }}{% endraw %}"
+            GOOGLE_APPLICATION_CREDENTIALS: "{% raw %}{{ tower.filename }}{% endraw %}"
+          file:
+            template: "{% raw %}{{ gcp_service_account_json }}{% endraw %}"
+        state: present
+      tags: [credentials, aap_setup]
+
+    - name: Create GCP credential
+      when: _gcp_ready | bool
+      ansible.controller.credential:
+        name: "{{ aap_credential_gcp_name }}"
+        description: GCP service account for landing zone + VM provisioning
+        organization: "{{ aap_organization }}"
+        credential_type: GCP Service Account (google.cloud)
+        inputs:
+          gcp_project: "{{ lookup('env', 'GCP_PROJECT') }}"
+          gcp_service_account_json: "{{ lookup('file', lookup('env', 'GCP_SERVICE_ACCOUNT_FILE') | expandvars) }}"
+        state: present
+      no_log: true
+      tags: [credentials, aap_setup]
+
+    - name: Warn — GCP credential skipped (env vars not set)
+      when: not (_gcp_ready | bool)
+      ansible.builtin.debug:
+        msg: "Skipping GCP credential — set GCP_SERVICE_ACCOUNT_FILE and GCP_PROJECT in .env"
+      tags: [credentials, aap_setup]
+
+    - name: Create SSH machine credential
+      when: _ssh_ready | bool
+      ansible.controller.credential:
+        name: "{{ aap_credential_ssh_name }}"
+        description: SSH key for SAP hosts (Azure + GCP)
+        organization: "{{ aap_organization }}"
+        credential_type: Machine
+        inputs:
+          username: "{{ lookup('env', 'SSH_USERNAME') | default('azureuser', true) }}"
+          ssh_key_data: "{{ lookup('file', lookup('env', 'SSH_PRIVATE_KEY_FILE') | expandvars) }}"
+        state: present
+      no_log: true
+      tags: [credentials, aap_setup]
+
+    - name: Warn — SSH credential skipped (env vars not set)
+      when: not (_ssh_ready | bool)
+      ansible.builtin.debug:
+        msg: "Skipping SSH credential — set SSH_PRIVATE_KEY_FILE in .env"
+      tags: [credentials, aap_setup]
+
+    # ── Project ─────────────────────────────────────────────────────────────
+    - name: Create SCM project
+      ansible.controller.project:
+        name: "{{ aap_project_name }}"
+        description: SAP Azure→GCP migration collection and playbooks
+        organization: "{{ aap_organization }}"
+        scm_type: git
+        scm_url: "{{ aap_project_scm_url }}"
+        scm_branch: "{{ aap_project_scm_branch }}"
+        scm_update_on_launch: false
+        wait: false
+        state: present
+      tags: [project, aap_setup]
+
+    - name: Sync project (best-effort — skip if repo not yet pushed)
+      ansible.controller.project_update:
+        name: "{{ aap_project_name }}"
+        wait: true
+        timeout: 180
+      register: _project_sync
+      failed_when: false
+      tags: [project, aap_setup]
+
+    - name: Report project sync result
+      ansible.builtin.debug:
+        msg: >-
+          Project sync {{ 'succeeded' if (_project_sync.status | default('') == 'successful' or _project_sync.changed | default(false)) else 'failed or skipped — push repo to ' + aap_project_scm_url + ' then re-run --tags project' }}
+      tags: [project, aap_setup]
+
+    # ── Inventories ──────────────────────────────────────────────────────────
+    - name: Create controller localhost inventory
+      ansible.controller.inventory:
+        name: "{{ aap_inventory_controller_name }}"
+        description: Localhost for controller-side migration tasks
+        organization: "{{ aap_organization }}"
+        state: present
+      tags: [inventory, aap_setup]
+
+    - name: Add localhost host to controller inventory
+      ansible.controller.host:
+        name: localhost
+        inventory: "{{ aap_inventory_controller_name }}"
+        variables:
+          ansible_connection: local
+        enabled: true
+        state: present
+      tags: [inventory, aap_setup]
+
+    - name: Create Azure source inventory
+      ansible.controller.inventory:
+        name: "{{ aap_inventory_azure_name }}"
+        description: Azure SAP source cluster (dynamic azure_rm)
+        organization: "{{ aap_organization }}"
+        state: present
+      tags: [inventory, aap_setup]
+
+    - name: Add Azure dynamic inventory source
+      when: _azure_ready | bool
+      ansible.controller.inventory_source:
+        name: "{{ aap_inventory_azure_name }} Source"
+        inventory: "{{ aap_inventory_azure_name }}"
+        source: azure_rm
+        credential: "{{ aap_credential_azure_name }}"
+        source_vars:
+          include_vm_resource_groups:
+            - "{{ lookup('env', 'AZURE_RESOURCE_GROUP') }}"
+          keyed_groups:
+            - key: tags.sap_role
+              prefix: sap
+        update_on_launch: true
+        state: present
+      tags: [inventory, aap_setup]
+
+    - name: Create GCP target inventory
+      ansible.controller.inventory:
+        name: "{{ aap_inventory_gcp_name }}"
+        description: GCP SAP target cluster (populated by pipeline phase 1)
+        organization: "{{ aap_organization }}"
+        state: present
+      tags: [inventory, aap_setup]
+
+    # ── Job Templates ────────────────────────────────────────────────────────
+    - name: Create pipeline job templates
+      ansible.controller.job_template:
+        name: "{{ item.name }}"
+        description: "SAP Azure→GCP migration — {{ item.playbook }}"
+        organization: "{{ aap_organization }}"
+        project: "{{ aap_project_name }}"
+        playbook: "{{ item.playbook }}"
+        inventory: "{{ item.inventory }}"
+        execution_environment: "{{ aap_ee_name }}"
+        credentials: "{{ item.credentials | default([]) }}"
+        ask_variables_on_launch: "{{ item.ask_variables_on_launch | default(true) }}"
+        state: present
+      loop: "{{ aap_job_templates }}"
+      loop_control:
+        label: "{{ item.name }}"
+      tags: [job_templates, aap_setup]
+
+    # ── Workflow ─────────────────────────────────────────────────────────────
+    - name: Create migration workflow job template
+      ansible.controller.workflow_job_template:
+        name: "{{ aap_workflow_name }}"
+        description: End-to-end SAP migration from Azure to GCP with approval gates
+        organization: "{{ aap_organization }}"
+        survey_enabled: true
+        survey_spec: "{{ aap_workflow_survey }}"
+        ask_variables_on_launch: true
+        state: present
+      tags: [workflow, aap_setup]
+
+    - name: Create workflow nodes
+      ansible.controller.workflow_job_template_node:
+        workflow_job_template: "{{ aap_workflow_name }}"
+        identifier: "{{ item.identifier }}"
+        unified_job_template: "{{ item.unified_job_template | default(omit) }}"
+        approval_node: "{{ item.approval_node | default(omit) }}"
+        organization: "{{ aap_organization }}"
+        state: present
+      loop: "{{ aap_workflow_nodes }}"
+      loop_control:
+        label: "{{ item.identifier }}"
+      tags: [workflow, aap_setup]
+
+    - name: Link workflow nodes on success
+      ansible.controller.workflow_job_template_node:
+        workflow_job_template: "{{ aap_workflow_name }}"
+        identifier: "{{ item.identifier }}"
+        success_nodes: "{{ item.success_nodes }}"
+        organization: "{{ aap_organization }}"
+        state: present
+      loop: "{{ aap_workflow_nodes | selectattr('success_nodes', 'defined') | list }}"
+      loop_control:
+        label: "{{ item.identifier }}"
+      tags: [workflow, aap_setup]
+
+    # ── Summary ──────────────────────────────────────────────────────────────
+    - name: Setup complete
+      ansible.builtin.debug:
+        msg:
+          controller: "{{ aap_controller_host }}"
+          organization: "{{ aap_organization }}"
+          ee: "{{ aap_ee_name }} ({{ aap_ee_image }})"
+          project: "{{ aap_project_name }}"
+          inventories:
+            - "{{ aap_inventory_controller_name }}"
+            - "{{ aap_inventory_azure_name }}"
+            - "{{ aap_inventory_gcp_name }}"
+          credentials_created:
+            azure: "{{ _azure_ready | bool }}"
+            gcp: "{{ _gcp_ready | bool }}"
+            ssh: "{{ _ssh_ready | bool }}"
+          workflow: "{{ aap_workflow_name }}"
+          next_steps:
+            - "Fill AZURE_*, GCP_*, SSH_* in .env then: ./scripts/setup-aap.sh --tags credentials"
+            - "Launch workflow '{{ aap_workflow_name }}' in AAP"
+      tags: [always]

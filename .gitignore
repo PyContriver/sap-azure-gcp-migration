@@ -1,0 +1,64 @@
+# Local secrets and environment (use .env.example as template)
+.env
+.env.*
+!.env.example
+
+# Python virtualenv
+env/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.Python
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# Ansible
+*.retry
+.ansible/
+ansible.log
+ansible.cfg.local
+
+# Galaxy collections installed locally (keep acme.sap_migration in repo)
+collections/ansible_collections/azure/
+collections/ansible_collections/google/
+collections/ansible_collections/redhat/
+collections/ansible_collections/sap/
+collections/ansible_collections/cloud/
+collections/ansible_collections/ansible/
+collections/ansible_collections/community/
+
+# EE build staging / builder context
+execution-environment/.collections-staging/
+execution-environment/context/
+*.tar.gz
+
+# Cloud credentials and keys
+*.pem
+*.key
+*-credentials.json
+*-sa.json
+.gcp/
+credentials.json
+service-account*.json
+
+# SSH private keys (public keys are ok)
+id_rsa
+id_ed25519
+sap_migration_id_rsa
+!*.pub
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*~
+
+# Logs and temp
+*.log
+tmp/
+.cache/

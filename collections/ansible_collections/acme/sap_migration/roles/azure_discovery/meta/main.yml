@@ -1,0 +1,12 @@
+---
+galaxy_info:
+  role_name: azure_discovery
+  author: SAP Migration Team
+  description: Discover clustered SAP VMs and metadata in Azure
+  license: Apache-2.0
+  min_ansible_version: "2.16"
+  platforms:
+    - name: EL
+      versions:
+        - all
+dependencies: []

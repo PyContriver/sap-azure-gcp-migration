@@ -1,0 +1,7 @@
+---
+# Pipeline Phase 2 — Export SAP data from Azure, transfer to GCS, import on GCP.
+# AAP job template: "SAP Migration - 02 System Copy"
+# Runs on: SAP Migration Azure (export) + SAP Migration (transfer) + SAP Migration GCP (import)
+- import_playbook: 08_system_copy_export.yml
+- import_playbook: 09_transfer_to_gcs.yml
+- import_playbook: 10_system_copy_import.yml

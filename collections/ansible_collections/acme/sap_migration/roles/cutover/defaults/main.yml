@@ -1,0 +1,3 @@
+---
+cutover_dns_ttl: 300
+cutover_smoke_test_transaction: SM50

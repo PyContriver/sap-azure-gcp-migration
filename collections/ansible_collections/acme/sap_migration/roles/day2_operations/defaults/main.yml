@@ -1,0 +1,28 @@
+---
+# Day 2 operations — post-migration steady state on GCP
+
+day2_operation: all
+
+# Health checks
+day2_health_check_hana: true
+day2_health_check_nw: true
+day2_health_check_pacemaker: true
+day2_health_check_hsr: true
+
+# Backup (sap.sap_operations sap_hana_backint — GCP platform)
+day2_backint_enabled: true
+day2_backint_action: backup
+day2_backint_platform: gcp_gcs
+day2_backint_setup_if_missing: false
+day2_backint_bucket: "{{ system_copy_gcs_bucket }}-backups"
+day2_backint_retention_days: 14
+
+# Firewall drift detection
+day2_firewall_remediate: false
+
+# SAP control actions: GetProcessList | GetSystemInstanceList | GetVersionInfo
+day2_sapcontrol_function: GetProcessList
+
+# Alert thresholds (for report facts)
+day2_hana_min_green_processes: 1
+day2_fail_on_unhealthy_cluster: true

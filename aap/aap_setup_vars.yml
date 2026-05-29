@@ -1,0 +1,196 @@
+---
+# AAP object definitions for SAP Azure→GCP Migration
+# Used by aap/setup_controller.yml — values resolved from .env via lookup('env', ...)
+
+# ─── Controller connection ────────────────────────────────────────────────────
+aap_controller_host: "{{ lookup('env', 'CONTROLLER_HOST') }}"
+aap_controller_token: "{{ lookup('env', 'CONTROLLER_OAUTH_TOKEN') | default('', true) }}"
+aap_controller_username: "{{ lookup('env', 'CONTROLLER_USERNAME') | default('admin', true) }}"
+aap_controller_password: "{{ lookup('env', 'CONTROLLER_PASSWORD') | default('', true) }}"
+aap_verify_ssl: "{{ lookup('env', 'AAP_VERIFY_SSL') | default('false', true) | bool }}"
+aap_organization: "{{ lookup('env', 'AAP_ORGANIZATION') | default('Default', true) }}"
+
+# ─── Execution Environment ────────────────────────────────────────────────────
+aap_ee_name: "{{ lookup('env', 'AAP_EE_NAME') | default('sap-migration-ee', true) }}"
+aap_ee_image: "{{ lookup('env', 'AAP_EE_IMAGE') | default('34.205.23.227/demo/sap-migration-ee:latest', true) }}"
+
+# ─── Credential names ─────────────────────────────────────────────────────────
+aap_credential_azure_name: SAP Migration - Azure
+aap_credential_gcp_name: SAP Migration - GCP
+aap_credential_ssh_name: SAP Migration - SSH
+
+# ─── Project ──────────────────────────────────────────────────────────────────
+aap_project_name: SAP Azure-GCP Migration
+aap_project_scm_url: https://github.com/PyContriver/sap-azure-gcp-migration
+aap_project_scm_branch: main
+
+# ─── Inventories ──────────────────────────────────────────────────────────────
+# Localhost inventory for controller-side tasks (phases 1, 2, 3 controller plays)
+aap_inventory_controller_name: SAP Migration
+# Dynamic Azure inventory (source system discovery)
+aap_inventory_azure_name: SAP Migration Azure
+# GCP inventory (populated by add_host in phase 1; dynamic for Day2)
+aap_inventory_gcp_name: SAP Migration GCP
+
+# ─── Workflow survey defaults (from .env) ─────────────────────────────────────
+aap_survey_defaults:
+  migration_name: "{{ lookup('env', 'MIGRATION_NAME') | default('sap-migration-demo', true) }}"
+  sap_sid: "{{ lookup('env', 'SAP_SID') | default('DEV', true) }}"
+  sap_instance_nr: "{{ lookup('env', 'SAP_INSTANCE_NR') | default('00', true) }}"
+  sap_database_type: "{{ lookup('env', 'SAP_DATABASE_TYPE') | default('db2', true) }}"
+  sap_db2_instance: "{{ lookup('env', 'SAP_DB2_INSTANCE') | default('db2inst1', true) }}"
+  sap_hana_instance_nr: "{{ lookup('env', 'SAP_HANA_INSTANCE_NR') | default('00', true) }}"
+  azure_resource_group: "{{ lookup('env', 'AZURE_RESOURCE_GROUP') | default('', true) }}"
+  azure_location: "{{ lookup('env', 'AZURE_LOCATION') | default('eastus', true) }}"
+  gcp_project: "{{ lookup('env', 'GCP_PROJECT') | default('', true) }}"
+  gcp_region: "{{ lookup('env', 'GCP_REGION') | default('us-central1', true) }}"
+  gcp_zone: "{{ lookup('env', 'GCP_ZONE') | default('us-central1-a', true) }}"
+  sap_migration_dry_run: "false"
+  sap_migration_skip_decommission: "true"
+
+# ─── Job templates (3 pipeline phases + day2) ─────────────────────────────────
+aap_job_templates:
+  - name: SAP Migration - 01 Build GCP Shell
+    playbook: collections/ansible_collections/acme/sap_migration/playbooks/pipeline_01_build_gcp_shell.yml
+    inventory: "{{ aap_inventory_controller_name }}"
+    credentials:
+      - "{{ aap_credential_azure_name }}"
+      - "{{ aap_credential_gcp_name }}"
+      - "{{ aap_credential_ssh_name }}"
+    identifier: phase1
+
+  - name: SAP Migration - 02 System Copy
+    playbook: collections/ansible_collections/acme/sap_migration/playbooks/pipeline_02_system_copy.yml
+    inventory: "{{ aap_inventory_azure_name }}"
+    credentials:
+      - "{{ aap_credential_azure_name }}"
+      - "{{ aap_credential_gcp_name }}"
+      - "{{ aap_credential_ssh_name }}"
+    identifier: phase2
+
+  - name: SAP Migration - 03 Cutover
+    playbook: collections/ansible_collections/acme/sap_migration/playbooks/pipeline_03_cutover.yml
+    inventory: "{{ aap_inventory_gcp_name }}"
+    credentials:
+      - "{{ aap_credential_gcp_name }}"
+      - "{{ aap_credential_ssh_name }}"
+    identifier: phase3
+
+  - name: SAP Migration - Day2 Operations
+    playbook: collections/ansible_collections/acme/sap_migration/playbooks/day2_operations.yml
+    inventory: "{{ aap_inventory_gcp_name }}"
+    credentials:
+      - "{{ aap_credential_gcp_name }}"
+      - "{{ aap_credential_ssh_name }}"
+    identifier: day2
+    ask_variables_on_launch: true
+
+# ─── Workflow ─────────────────────────────────────────────────────────────────
+aap_workflow_name: SAP Azure to GCP Migration
+aap_workflow_survey:
+  name: SAP Migration Survey
+  description: Variables for the Azure→GCP SAP migration pipeline
+  spec:
+    - variable: migration_name
+      question_name: Migration name / run label
+      type: text
+      required: true
+      default: "{{ aap_survey_defaults.migration_name }}"
+    - variable: sap_sid
+      question_name: SAP System ID (3 chars)
+      type: text
+      required: true
+      min: 3
+      max: 3
+      default: "{{ aap_survey_defaults.sap_sid }}"
+    - variable: sap_instance_nr
+      question_name: ABAP instance number
+      type: text
+      required: true
+      default: "{{ aap_survey_defaults.sap_instance_nr }}"
+    - variable: sap_database_type
+      question_name: Database type
+      type: multiplechoice
+      required: true
+      default: "{{ aap_survey_defaults.sap_database_type }}"
+      choices:
+        - db2
+        - hana
+    - variable: sap_db2_instance
+      question_name: Db2 instance name (db2 only)
+      type: text
+      required: false
+      default: "{{ aap_survey_defaults.sap_db2_instance }}"
+    - variable: sap_hana_instance_nr
+      question_name: HANA instance number (hana only)
+      type: text
+      required: false
+      default: "{{ aap_survey_defaults.sap_hana_instance_nr }}"
+    - variable: azure_resource_group
+      question_name: Azure resource group (source)
+      type: text
+      required: true
+      default: "{{ aap_survey_defaults.azure_resource_group }}"
+    - variable: azure_location
+      question_name: Azure location
+      type: text
+      required: true
+      default: "{{ aap_survey_defaults.azure_location }}"
+    - variable: gcp_project
+      question_name: GCP project ID
+      type: text
+      required: true
+      default: "{{ aap_survey_defaults.gcp_project }}"
+    - variable: gcp_region
+      question_name: GCP region
+      type: text
+      required: true
+      default: "{{ aap_survey_defaults.gcp_region }}"
+    - variable: gcp_zone
+      question_name: GCP zone
+      type: text
+      required: true
+      default: "{{ aap_survey_defaults.gcp_zone }}"
+    - variable: sap_migration_dry_run
+      question_name: Dry run (no changes)
+      type: multiplechoice
+      required: true
+      default: "false"
+      choices:
+        - "true"
+        - "false"
+    - variable: sap_migration_skip_decommission
+      question_name: Skip Azure decommission after cutover
+      type: multiplechoice
+      required: true
+      default: "true"
+      choices:
+        - "true"
+        - "false"
+
+# Workflow DAG: phase1 → approval → phase2 → approval → phase3
+aap_workflow_nodes:
+  - identifier: phase1
+    unified_job_template: SAP Migration - 01 Build GCP Shell
+    success_nodes:
+      - approval_export
+  - identifier: approval_export
+    approval_node:
+      name: Approve system copy export
+      description: GCP shell is ready. Approve to begin SAP data export from Azure.
+      timeout: 0
+    success_nodes:
+      - phase2
+  - identifier: phase2
+    unified_job_template: SAP Migration - 02 System Copy
+    success_nodes:
+      - approval_cutover
+  - identifier: approval_cutover
+    approval_node:
+      name: Approve production cutover
+      description: Data import complete. Approve to perform DNS/VIP cutover to GCP.
+      timeout: 0
+    success_nodes:
+      - phase3
+  - identifier: phase3
+    unified_job_template: SAP Migration - 03 Cutover

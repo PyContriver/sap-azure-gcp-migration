@@ -1,0 +1,20 @@
+---
+- name: Aggregate Day 2 health report on controller
+  ansible.builtin.set_stats:
+    data:
+      day2_migration_name: "{{ migration_name }}"
+      day2_sap_sid: "{{ sap_sid }}"
+      day2_timestamp: "{{ ansible_date_time.iso8601 }}"
+      day2_hosts_checked: "{{ ansible_play_hosts | length }}"
+    aggregate: true
+  run_once: true
+
+- name: Fail when cluster health check failed
+  ansible.builtin.fail:
+    msg: >-
+      Day 2 health check failed on {{ inventory_hostname }}.
+      Report: {{ day2_health_report | default({}) }}
+  when:
+    - day2_fail_on_unhealthy_cluster | bool
+    - day2_health_report is defined
+    - not (day2_health_report.pcs_ok | default(true)) or not (day2_health_report.hsr_ok | default(true))

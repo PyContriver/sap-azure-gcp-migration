@@ -1,0 +1,87 @@
+---
+- name: Validate Azure credentials and resource group exist
+  ansible.builtin.assert:
+    that:
+      - azure_subscription_id | length > 0
+      - azure_resource_group | length > 0
+    fail_msg: "Set azure_subscription_id and azure_resource_group via survey or extra-vars."
+
+- name: Gather Azure VMs in resource group
+  azure.azcollection.azure_rm_virtualmachine_info:
+    resource_group: "{{ azure_resource_group }}"
+    tags: "{{ azure_vm_tag_filter | default(omit) }}"
+  register: azure_vms
+
+- name: Fail when no VMs discovered
+  ansible.builtin.fail:
+    msg: "No VMs found in {{ azure_resource_group }} matching tag filter."
+  when: azure_vms.vms | default([]) | length == 0
+
+- name: Gather VM size details for each discovered VM
+  azure.azcollection.azure_rm_virtualmachinesize_info:
+    location: "{{ azure_location }}"
+  register: azure_vm_sizes
+
+- name: Build discovery report per VM
+  ansible.builtin.set_fact:
+    sap_azure_discovery_report: >-
+      {{
+        sap_azure_discovery_report | default([]) + [{
+          'name': item.name,
+          'location': item.location | default(azure_location),
+          'vm_size': item.vm_size,
+          'power_state': item.powerstate | default('unknown'),
+          'tags': item.tags | default({}),
+          'disks': item.storage_profile.os_disk | default({}),
+          'network_interfaces': item.network_profile.network_interfaces | default([])
+        }]
+      }}
+  loop: "{{ azure_vms.vms }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Infer SAP node roles from VM name tags
+  ansible.builtin.set_fact:
+    sap_inferred_cluster_nodes: >-
+      {{
+        sap_inferred_cluster_nodes | default({}) | combine({
+          item.name: (
+            'db2_primary' if 'db2' in item.name | lower and ('primary' in item.name | lower or '01' in item.name)
+            else 'db2_secondary' if 'db2' in item.name | lower
+            else 'hana_primary' if 'hana' in item.name | lower and ('01' in item.name or 'primary' in item.name | lower)
+            else 'hana_secondary' if 'hana' in item.name | lower
+            else 'ascs' if 'ascs' in item.name | lower
+            else 'ers' if 'ers' in item.name | lower
+            else 'aas' if 'aas' in item.name | lower or 'app' in item.name | lower
+            else 'unknown'
+          )
+        })
+      }}
+  loop: "{{ azure_vms.vms }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Capture UID/GID from first HANA node (when reachable)
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ sap_sid | lower }}adm"
+  register: sidadm_passwd
+  delegate_to: "{{ groups['azure_sap'] | default([]) | first }}"
+  ignore_errors: true
+  when: groups['azure_sap'] | default([]) | length > 0
+
+- name: Persist discovery facts for downstream playbooks
+  ansible.builtin.set_stats:
+    data:
+      sap_azure_discovery_report: "{{ sap_azure_discovery_report }}"
+      sap_inferred_cluster_nodes: "{{ sap_inferred_cluster_nodes | default({}) }}"
+      sap_user_uid_gid:
+        sidadm_uid: "{{ sidadm_passwd.ansible_facts.getent_passwd[sap_sid | lower ~ 'adm'][1] | default(sap_user_uid_gid.sidadm_uid) }}"
+        sidadm_gid: "{{ sidadm_passwd.ansible_facts.getent_passwd[sap_sid | lower ~ 'adm'][2] | default(sap_user_uid_gid.sidadm_gid) }}"
+    aggregate: false
+
+- name: Display discovery summary
+  ansible.builtin.debug:
+    msg:
+      - "Discovered {{ sap_azure_discovery_report | length }} VMs in {{ azure_resource_group }}"
+      - "{{ sap_azure_discovery_report | map(attribute='name') | list }}"

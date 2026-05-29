@@ -1,0 +1,16 @@
+---
+# Day 2 operations defaults — override via AAP Survey or Job Template extra-vars
+
+day2_schedule:
+  health_check_cron: "0 */4 * * *"
+  backup_cron: "0 2 * * *"
+  firewall_audit_cron: "0 6 * * 1"
+
+day2_notification_channels:
+  - email: sap-basis@example.com
+  - slack: "#sap-gcp-ops"
+
+day2_sla:
+  max_backup_age_hours: 26
+  require_hsr_active: true
+  require_pcs_no_failed_resources: true

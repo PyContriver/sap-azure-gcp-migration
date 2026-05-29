@@ -1,0 +1,67 @@
+---
+- name: Database health checks for IBM Db2
+  ansible.builtin.include_tasks: health_check_db2.yml
+  when: sap_database_type == 'db2'
+
+- name: HANA process health via sapcontrol
+  community.sap_libs.sap_control_exec:
+    sysnr: "{{ sap_hana_instance_nr }}"
+    function: GetProcessList
+  become: true
+  become_user: "{{ sap_sid | lower }}adm"
+  register: day2_hana_processes
+  changed_when: false
+  when:
+    - sap_database_type == 'hana'
+    - day2_health_check_hana | bool
+    - inventory_hostname in (groups['hana_primary'] | default([])) + (groups['hana_secondary'] | default([])) or sap_node_role is match('hana_.*')
+
+- name: NetWeaver instance health via sapcontrol
+  community.sap_libs.sap_control_exec:
+    sysnr: "{{ sap_instance_nr }}"
+    function: GetSystemInstanceList
+  become: true
+  become_user: "{{ sap_sid | lower }}adm"
+  register: day2_nw_instances
+  changed_when: false
+  when:
+    - day2_health_check_nw | bool
+    - sap_node_role is match('ascs|ers|aas') or inventory_hostname in (groups['ascs'] | default([])) + (groups['ers'] | default([])) + (groups['aas'] | default([]))
+
+- name: Pacemaker cluster status
+  ansible.builtin.command:
+    argv:
+      - pcs
+      - status
+      - --full
+  become: true
+  register: day2_pcs_status
+  changed_when: false
+  failed_when: false
+  when:
+    - day2_health_check_pacemaker | bool
+    - sap_ha_cluster_enabled | bool
+
+- name: HANA replication status
+  ansible.builtin.command:
+    argv:
+      - hdbnsutil
+      - -sr_state
+  become: true
+  become_user: "{{ sap_sid | lower }}adm"
+  register: day2_hsr_state
+  changed_when: false
+  failed_when: false
+  when:
+    - sap_database_type == 'hana'
+    - day2_health_check_hsr | bool
+    - sap_node_role == 'hana_primary'
+
+- name: Record health check facts
+  ansible.builtin.set_fact:
+    day2_health_report:
+      host: "{{ inventory_hostname }}"
+      hana_ok: "{{ day2_hana_processes is not skipped and day2_hana_processes.rc | default(1) == 0 }}"
+      nw_ok: "{{ day2_nw_instances is not skipped and day2_nw_instances.rc | default(1) == 0 }}"
+      pcs_ok: "{{ day2_pcs_status is not skipped and day2_pcs_status.rc | default(1) == 0 }}"
+      hsr_ok: "{{ day2_hsr_state is not skipped and 'ACTIVE' in (day2_hsr_state.stdout | default('')) }}"

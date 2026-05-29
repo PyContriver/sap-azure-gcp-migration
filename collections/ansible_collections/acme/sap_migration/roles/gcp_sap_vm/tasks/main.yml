@@ -1,0 +1,40 @@
+---
+- name: Validate cluster node definitions
+  ansible.builtin.assert:
+    that:
+      - sap_cluster_nodes is defined
+      - sap_cluster_nodes | length > 0
+    fail_msg: "Define sap_cluster_nodes in group_vars/sap_ha_cluster.yml or via survey."
+
+- name: Provision GCP VMs for each SAP cluster node
+  ansible.builtin.include_tasks: provision_node.yml
+  loop: "{{ sap_cluster_nodes | dict2items }}"
+  loop_control:
+    loop_var: cluster_node
+    label: "{{ cluster_node.key }}"
+
+- name: Wait for SSH on all provisioned hosts
+  ansible.builtin.wait_for:
+    host: "{{ item.ansible_host }}"
+    port: 22
+    search_regex: OpenSSH
+    timeout: "{{ ssh_wait_timeout | int }}"
+    sleep: 10
+  loop: "{{ gcp_provisioned_hosts }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Persist provisioned host inventory
+  ansible.builtin.set_stats:
+    data:
+      gcp_provisioned_hosts: "{{ gcp_provisioned_hosts }}"
+    aggregate: false
+
+- name: Add provisioned hosts to in-memory inventory
+  ansible.builtin.add_host:
+    name: "{{ item.name }}"
+    groups: "{{ item.groups }}"
+    ansible_host: "{{ item.ansible_host }}"
+    ansible_user: "{{ item.ansible_user }}"
+    sap_node_role: "{{ item.sap_node_role }}"
+  loop: "{{ gcp_provisioned_hosts }}"

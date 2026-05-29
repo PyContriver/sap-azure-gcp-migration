@@ -1,0 +1,32 @@
+---
+- name: Run HANA backup before export (when using backup method)
+  ansible.builtin.command:
+    argv:
+      - hdbsql
+      - -U
+      - BACKUP
+      - "BACKUP DATA USING FILE ('{{ system_copy_export_path }}/hana_backup')"
+  become: true
+  become_user: "{{ sap_sid | lower }}adm"
+  register: hana_backup
+  changed_when: hana_backup.rc == 0
+  when:
+    - not sap_migration_dry_run | bool
+    - system_copy_export_method == hana_backup
+
+- name: Run SWPM homogeneous export (HANA landscape)
+  ansible.builtin.command:
+    argv:
+      - "{{ sap_swpm_dir | default('/sapmedia/SWPM') }}/sapinst"
+      - EXPORT
+      - -sid
+      - "{{ sap_sid }}"
+      - -exportDir
+      - "{{ system_copy_export_path }}"
+  become: true
+  become_user: "{{ sap_sid | lower }}adm"
+  register: swpm_export
+  changed_when: swpm_export.rc == 0
+  when:
+    - not sap_migration_dry_run | bool
+    - system_copy_export_method == swpm_homogeneous

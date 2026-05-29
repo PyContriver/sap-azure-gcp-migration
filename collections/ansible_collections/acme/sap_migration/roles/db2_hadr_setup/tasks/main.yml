@@ -1,0 +1,37 @@
+---
+- name: Configure Pacemaker for Db2 + NetWeaver (no HANA HSR)
+  ansible.builtin.include_role:
+    name: redhat.sap_install.sap_ha_pacemaker_cluster
+  vars:
+    sap_ha_pacemaker_cluster_fence_agent: "{{ sap_pacemaker_fence_agent }}"
+    sap_ha_pacemaker_cluster_fence_options: "{{ sap_pacemaker_fence_options }}"
+  when: sap_ha_cluster_enabled | bool
+
+- name: Db2 HADR configuration placeholder on primary
+  ansible.builtin.copy:
+    dest: "/db2/{{ sap_db2_instance }}/.hadr_config_pending"
+    content: |
+      Configure Db2 HADR between primary and secondary per SAP Note baseline.
+      Primary: {{ groups['db2_primary'] | default([]) | join(',') }}
+      Secondary: {{ groups['db2_secondary'] | default([]) | join(',') }}
+      Database: {{ sap_db2_database }}
+    mode: "0640"
+  become: true
+  become_user: "{{ sap_db2_instance }}"
+  when:
+    - sap_db2_hadr_enabled | bool
+    - sap_node_role == 'db2_primary'
+    - not sap_migration_dry_run | bool
+
+- name: Verify Db2 instance is reachable on primary
+  ansible.builtin.command:
+    argv:
+      - db2
+      - get
+      - instance
+  become: true
+  become_user: "{{ sap_db2_instance }}"
+  register: db2_instance_check
+  changed_when: false
+  failed_when: false
+  when: sap_node_role == 'db2_primary'

@@ -1,0 +1,10 @@
+---
+- name: SAP Migration | System copy export on Azure
+  hosts: azure_sap
+  become: true
+  vars_files:
+    - ../inventory/group_vars/all.yml
+    - ../inventory/group_vars/sap_ha_cluster.yml
+    - ../inventory/group_vars/profiles/{{ sap_database_type }}_ha.yml
+  roles:
+    - acme.sap_migration.system_copy_export

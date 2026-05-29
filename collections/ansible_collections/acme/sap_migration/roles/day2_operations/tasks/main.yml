@@ -1,0 +1,28 @@
+---
+- name: Day 2 | Health checks
+  ansible.builtin.include_tasks: health_check.yml
+  tags:
+    - day2
+    - day2_health
+    - health
+
+- name: Day 2 | HANA backup (Backint → GCS)
+  ansible.builtin.include_tasks: backup.yml
+  tags:
+    - day2
+    - day2_backup
+    - backup
+
+- name: Day 2 | Firewall validation
+  ansible.builtin.include_tasks: firewall.yml
+  tags:
+    - day2
+    - day2_firewall
+    - firewall
+
+- name: Day 2 | Aggregate report and enforce SLA
+  ansible.builtin.include_tasks: report.yml
+  tags:
+    - day2
+    - day2_report
+    - report

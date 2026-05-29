@@ -1,0 +1,8 @@
+---
+galaxy_info:
+  role_name: db2_shell_install
+  author: SAP Migration Team
+  description: Greenfield IBM Db2 shell install on GCP for SAP AnyDB migrations
+  license: Apache-2.0
+  min_ansible_version: "2.16"
+dependencies: []

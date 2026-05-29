@@ -1,0 +1,46 @@
+---
+- name: SAP Migration | Azure decommission (optional)
+  hosts: localhost
+  gather_facts: false
+  vars_files:
+    - ../inventory/group_vars/all.yml
+  tasks:
+    - name: Skip decommission when flag set
+      ansible.builtin.debug:
+        msg: "Skipping Azure decommission (sap_migration_skip_decommission=true)"
+      when: sap_migration_skip_decommission | bool
+
+    - name: Stop Azure VMs in resource group
+      azure.azcollection.azure_rm_virtualmachine:
+        resource_group: "{{ azure_resource_group }}"
+        name: "{{ item.name }}"
+        started: false
+      loop: "{{ sap_azure_discovery_report | default([]) }}"
+      loop_control:
+        label: "{{ item.name }}"
+      when:
+        - not sap_migration_skip_decommission | bool
+        - not sap_migration_dry_run | bool
+        - sap_azure_discovery_report is defined
+
+    - name: Delete Azure VMs after cutover approval
+      azure.azcollection.azure_rm_virtualmachine:
+        resource_group: "{{ azure_resource_group }}"
+        name: "{{ item.name }}"
+        state: absent
+        remove_on_absent:
+          virtual_hard_disks: all
+          network_interfaces: all
+      loop: "{{ sap_azure_discovery_report | default([]) }}"
+      loop_control:
+        label: "{{ item.name }}"
+      when:
+        - not sap_migration_skip_decommission | bool
+        - not sap_migration_dry_run | bool
+        - sap_azure_decommission_delete_vms | default(false) | bool
+        - sap_azure_discovery_report is defined
+
+    - name: Decommission complete
+      ansible.builtin.debug:
+        msg: "Azure resource group {{ azure_resource_group }} decommission tasks finished"
+      when: not sap_migration_skip_decommission | bool

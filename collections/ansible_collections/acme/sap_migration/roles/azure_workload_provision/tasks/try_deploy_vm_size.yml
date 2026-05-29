@@ -1,0 +1,51 @@
+---
+- name: Attempt VM deploy with size {{ deploy_size }}
+  azure.azcollection.azure_rm_virtualmachine:
+    name: "{{ workload_vm.name }}"
+    resource_group: "{{ azure_workload_resource_group }}"
+    vm_size: "{{ deploy_size }}"
+    admin_username: "{{ azure_workload_admin_user }}"
+    ssh_password_enabled: false
+    ssh_public_keys:
+      - path: "/home/{{ azure_workload_admin_user }}/.ssh/authorized_keys"
+        key_data: "{{ azure_workload_ssh_public_key }}"
+    managed_disk_type: "{{ azure_workload_managed_disk_type }}"
+    os_disk_size_gb: "{{ workload_vm.os_disk_size_gb | default(128) }}"
+    image: "{{ azure_workload_rhel_image }}"
+    network_interface_names:
+      - "{{ workload_vm.name }}-nic"
+    data_disks: "{{ [{'lun': 0, 'managed_disk_id': workload_data_disk.state.id}] if workload_vm.data_disk_size_gb is defined else omit }}"
+    tags: "{{ vm_tags }}"
+    state: present
+  register: workload_vm_result
+  failed_when: false
+
+- name: Mark VM deploy success for {{ deploy_size }}
+  ansible.builtin.set_fact:
+    workload_vm_deployed: true
+    workload_vm_effective_size: "{{ deploy_size }}"
+  when:
+    - workload_vm_result is succeeded
+    - not (workload_vm_result.failed | default(false))
+
+- name: Log SkuNotAvailable for {{ deploy_size }}
+  ansible.builtin.debug:
+    msg: "Size {{ deploy_size }} not available in {{ azure_workload_location }}, trying next..."
+  when:
+    - workload_vm_result.failed | default(false)
+    - "'SkuNotAvailable' in (workload_vm_result.msg | default('')) or 'Capacity' in (workload_vm_result.msg | default(''))"
+
+- name: Fail when all candidate VM sizes exhausted
+  ansible.builtin.fail:
+    msg: >-
+      Could not provision {{ workload_vm.name }} in {{ azure_workload_location }}.
+      Tried sizes: {{ vm_sizes_to_try | join(', ') }}.
+      eastus often has no capacity on trial subs — use a NEW resource group in another region:
+        ./scripts/azure_add_workloads.sh -g sap-migration-west -l westus2 -s DEV
+      Or pass a size you verified:
+        az vm list-skus -l {{ azure_workload_location }} --size Standard --output table
+        ./scripts/azure_add_workloads.sh -g ... --vm-size <SIZE>
+  when:
+    - workload_vm_result.failed | default(false)
+    - deploy_size == vm_sizes_to_try[-1]
+    - not (workload_vm_deployed | default(false))

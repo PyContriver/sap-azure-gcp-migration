@@ -1,0 +1,24 @@
+---
+- name: Apply SAP recommended firewall rules on GCP nodes
+  ansible.builtin.include_role:
+    name: sap.sap_operations.sap_firewall
+  when: day2_firewall_remediate | bool
+
+- name: Verify GCP firewall tags still attached to instance
+  google.cloud.gcp_compute_instance_info:
+    zone: "{{ gcp_zone }}"
+    project: "{{ gcp_project }}"
+    filters:
+      - "name = {{ inventory_hostname }}"
+    auth_kind: "{{ gcp_cred_kind }}"
+    service_account_file: "{{ gcp_service_account_file_param }}"
+  delegate_to: localhost
+  register: day2_instance_info
+  changed_when: false
+
+- name: Report missing SAP network tags
+  ansible.builtin.debug:
+    msg: >-
+      Instance {{ inventory_hostname }} tags:
+      {{ day2_instance_info.resources[0].tags.items | default([]) }}
+  when: day2_instance_info.resources | default([]) | length > 0

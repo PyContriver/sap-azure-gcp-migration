@@ -1,0 +1,138 @@
+---
+- name: Set VM tags
+  ansible.builtin.set_fact:
+    vm_tags: "{{ azure_workload_common_tags | combine({'sap_role': workload_vm.sap_role}) }}"
+
+- name: Create NSG for {{ workload_vm.name }}
+  azure.azcollection.azure_rm_securitygroup:
+    name: "{{ workload_vm.name }}-nsg"
+    resource_group: "{{ azure_workload_resource_group }}"
+    rules: "{{ azure_workload_security_rules }}"
+    tags: "{{ vm_tags }}"
+    state: present
+  when: azure_workload_state == 'present'
+
+- name: Create public IP for {{ workload_vm.name }}
+  azure.azcollection.azure_rm_publicipaddress:
+    name: "{{ workload_vm.name }}-pip"
+    resource_group: "{{ azure_workload_resource_group }}"
+    allocation_method: "{{ azure_workload_public_ip_allocation }}"
+    sku: "{{ azure_workload_public_ip_sku }}"
+    tags: "{{ vm_tags }}"
+    state: present
+  register: workload_pip
+  when:
+    - azure_workload_state == 'present'
+    - workload_vm.assign_public_ip | default(true) | bool
+
+- name: Create NIC for {{ workload_vm.name }}
+  azure.azcollection.azure_rm_networkinterface:
+    name: "{{ workload_vm.name }}-nic"
+    resource_group: "{{ azure_workload_resource_group }}"
+    virtual_network: "{{ azure_workload_vnet_ref }}"
+    subnet: "{{ azure_workload_subnet_name }}"
+    security_group: "{{ workload_vm.name }}-nsg"
+    ip_configurations: >-
+      {{
+        [{'name': 'default', 'primary': true, 'public_ip_address_name': workload_vm.name ~ '-pip'}]
+        if (workload_vm.assign_public_ip | default(true) | bool)
+        else [{'name': 'default', 'primary': true}]
+      }}
+    tags: "{{ vm_tags }}"
+    state: present
+  when: azure_workload_state == 'present'
+
+- name: Create data disk for {{ workload_vm.name }}
+  azure.azcollection.azure_rm_manageddisk:
+    name: "{{ workload_vm.name }}-data"
+    resource_group: "{{ azure_workload_resource_group }}"
+    disk_size_gb: "{{ workload_vm.data_disk_size_gb }}"
+    storage_account_type: "{{ azure_workload_managed_disk_type }}"
+    tags: "{{ vm_tags }}"
+    state: present
+  register: workload_data_disk
+  when:
+    - azure_workload_state == 'present'
+    - workload_vm.data_disk_size_gb is defined
+
+- name: Build VM size candidates (catalog list ≠ capacity — try until one works)
+  ansible.builtin.set_fact:
+    vm_sizes_to_try: >-
+      {{
+        ([workload_vm.vm_size] + azure_workload_vm_size_fallback)
+        if azure_workload_quota_profile in ['min', 'low']
+        else [workload_vm.vm_size]
+      }}
+    workload_vm_deployed: false
+  when: azure_workload_state == 'present'
+
+- name: Deploy VM {{ workload_vm.name }} trying fallback sizes on SkuNotAvailable
+  ansible.builtin.include_tasks: try_deploy_vm_size.yml
+  loop: "{{ vm_sizes_to_try }}"
+  loop_control:
+    loop_var: deploy_size
+    label: "{{ deploy_size }}"
+  when:
+    - azure_workload_state == 'present'
+    - not (workload_vm_deployed | default(false))
+
+- name: Record {{ workload_vm.name }} connection info
+  ansible.builtin.set_fact:
+    azure_provisioned_workloads: >-
+      {{
+        azure_provisioned_workloads | default([]) + [{
+          'name': workload_vm.name,
+          'sap_role': workload_vm.sap_role,
+          'public_ip': "{{ '' if not (workload_vm.assign_public_ip | default(true) | bool) else workload_pip.state.ip_address }}"
+          'vm_size': workload_vm_effective_size
+        }]
+      }}
+  when:
+    - azure_workload_state == 'present'
+    - workload_vm_deployed | default(false)
+
+- name: Remove VM {{ workload_vm.name }}
+  azure.azcollection.azure_rm_virtualmachine:
+    name: "{{ workload_vm.name }}"
+    resource_group: "{{ azure_workload_resource_group }}"
+    state: absent
+    remove_on_absent:
+      - all
+  ignore_errors: true
+  when: azure_workload_state == 'absent'
+
+- name: Remove OS managed disk for {{ workload_vm.name }}
+  azure.azcollection.azure_rm_manageddisk:
+    name: "{{ workload_vm.name }}"
+    resource_group: "{{ azure_workload_resource_group }}"
+    state: absent
+  ignore_errors: true
+  when: azure_workload_state == 'absent'
+
+- name: Remove data disk for {{ workload_vm.name }}
+  azure.azcollection.azure_rm_manageddisk:
+    name: "{{ workload_vm.name }}-data"
+    resource_group: "{{ azure_workload_resource_group }}"
+    state: absent
+  ignore_errors: true
+  when:
+    - azure_workload_state == 'absent'
+    - workload_vm.data_disk_size_gb is defined
+
+- name: Remove NIC and PIP for {{ workload_vm.name }}
+  block:
+    - azure.azcollection.azure_rm_networkinterface:
+        name: "{{ workload_vm.name }}-nic"
+        resource_group: "{{ azure_workload_resource_group }}"
+        state: absent
+    - azure.azcollection.azure_rm_publicipaddress:
+        name: "{{ workload_vm.name }}-pip"
+        resource_group: "{{ azure_workload_resource_group }}"
+        state: absent
+      when: workload_vm.assign_public_ip | default(true) | bool
+      ignore_errors: true
+    - azure.azcollection.azure_rm_securitygroup:
+        name: "{{ workload_vm.name }}-nsg"
+        resource_group: "{{ azure_workload_resource_group }}"
+        state: absent
+  when: azure_workload_state == 'absent'

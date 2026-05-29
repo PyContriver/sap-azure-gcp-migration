@@ -1,0 +1,12 @@
+---
+# Pipeline Phase 1 — Validate, discover Azure topology, provision GCP shell + HA cluster.
+# AAP job template: "SAP Migration - 01 Build GCP Shell"
+# Runs on: SAP Migration (localhost for controller tasks) + SAP Migration GCP (for OS/install tasks)
+- import_playbook: 00_prerequisites.yml
+- import_playbook: 01_azure_discovery.yml
+- import_playbook: 02_gcp_landing_zone.yml
+- import_playbook: 03_gcp_provision_vms.yml
+- import_playbook: 04_os_preconfigure.yml
+- import_playbook: 05_database_shell_install.yml
+- import_playbook: 06_nw_shell_install.yml
+- import_playbook: 07_ha_cluster_build.yml

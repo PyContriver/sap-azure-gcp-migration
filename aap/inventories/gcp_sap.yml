@@ -1,0 +1,5 @@
+plugin: constructed
+strict: false
+groups:
+  gcp_sap: true
+  sap_ha_cluster: true

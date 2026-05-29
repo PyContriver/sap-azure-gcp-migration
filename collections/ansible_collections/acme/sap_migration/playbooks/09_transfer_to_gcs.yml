@@ -1,0 +1,42 @@
+---
+- name: SAP Migration | Transfer export artifacts to GCS
+  hosts: localhost
+  gather_facts: false
+  vars_files:
+    - ../inventory/group_vars/all.yml
+  tasks:
+    - name: Upload export directory to GCS bucket
+      ansible.builtin.command:
+        argv:
+          - gsutil
+          - -m
+          - rsync
+          - -r
+          - "{{ system_copy_export_path }}/"
+          - "gs://{{ system_copy_gcs_bucket }}/{{ system_copy_gcs_prefix }}/"
+      register: gcs_upload
+      changed_when: "'Copying' in gcs_upload.stdout or gcs_upload.rc == 0"
+      when: not sap_migration_dry_run | bool
+
+    - name: Verify objects uploaded to GCS
+      ansible.builtin.command:
+        argv:
+          - gsutil
+          - ls
+          - "gs://{{ system_copy_gcs_bucket }}/{{ system_copy_gcs_prefix }}/"
+      register: gcs_list
+      changed_when: false
+      when: not sap_migration_dry_run | bool
+
+    - name: Persist GCS transfer location
+      ansible.builtin.set_stats:
+        data:
+          system_copy_gcs_uri: "gs://{{ system_copy_gcs_bucket }}/{{ system_copy_gcs_prefix }}/"
+          system_copy_gcs_object_count: "{{ gcs_list.stdout_lines | default([]) | length }}"
+        aggregate: false
+
+    - name: Display transfer summary
+      ansible.builtin.debug:
+        msg:
+          - "Uploaded to gs://{{ system_copy_gcs_bucket }}/{{ system_copy_gcs_prefix }}/"
+          - "Objects: {{ gcs_list.stdout_lines | default([]) | length }}"

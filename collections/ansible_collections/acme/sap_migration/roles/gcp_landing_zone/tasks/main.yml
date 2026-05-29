@@ -1,0 +1,82 @@
+---
+- name: Validate GCP project is set
+  ansible.builtin.assert:
+    that:
+      - gcp_project | length > 0
+    fail_msg: "Set gcp_project via survey or GCP_PROJECT environment variable."
+
+- name: Create SAP migration VPC network
+  google.cloud.gcp_compute_network:
+    name: "{{ gcp_network_name }}"
+    auto_create_subnetworks: false
+    project: "{{ gcp_project }}"
+    auth_kind: "{{ gcp_cred_kind }}"
+    service_account_file: "{{ gcp_service_account_file_param }}"
+    state: present
+  register: gcp_network
+
+- name: Create SAP migration subnet
+  google.cloud.gcp_compute_subnetwork:
+    name: "{{ gcp_subnet_name }}"
+    region: "{{ gcp_region }}"
+    network: "{{ gcp_network }}"
+    ip_cidr_range: "{{ gcp_subnet_cidr }}"
+    project: "{{ gcp_project }}"
+    auth_kind: "{{ gcp_cred_kind }}"
+    service_account_file: "{{ gcp_service_account_file_param }}"
+    state: present
+  register: gcp_subnet
+
+- name: Create SAP firewall rules
+  google.cloud.gcp_compute_firewall:
+    name: "{{ migration_name }}-{{ item.key | replace('_', '-') }}"
+    allowed:
+      - ip_protocol: tcp
+        ports: "{{ item.value }}"
+    target_tags:
+      - "{{ item.key }}"
+    network: "{{ gcp_network }}"
+    project: "{{ gcp_project }}"
+    auth_kind: "{{ gcp_cred_kind }}"
+    service_account_file: "{{ gcp_service_account_file_param }}"
+    state: present
+  loop: "{{ gcp_sap_firewall_tags | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  register: firewall_results
+  failed_when:
+    - firewall_results is failed
+    - '"alreadyExists" not in (firewall_results.msg | default(""))'
+
+- name: Reserve static internal IPs for Pacemaker VIPs
+  google.cloud.gcp_compute_address:
+    name: "{{ migration_name }}-{{ item.key | replace('_', '-') }}"
+    region: "{{ gcp_region }}"
+    address_type: INTERNAL
+    subnetwork: "{{ gcp_subnet }}"
+    address: "{{ item.value }}"
+    project: "{{ gcp_project }}"
+    auth_kind: "{{ gcp_cred_kind }}"
+    service_account_file: "{{ gcp_service_account_file_param }}"
+    state: present
+  loop: "{{ sap_cluster_vips | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  when: sap_ha_cluster_enabled | bool
+
+- name: Create GCS bucket for system copy staging
+  google.cloud.gcp_storage_bucket:
+    name: "{{ system_copy_gcs_bucket }}"
+    project: "{{ gcp_project }}"
+    location: "{{ gcp_region }}"
+    auth_kind: "{{ gcp_cred_kind }}"
+    service_account_file: "{{ gcp_service_account_file_param }}"
+    state: present
+
+- name: Persist landing zone facts
+  ansible.builtin.set_stats:
+    data:
+      gcp_network_name: "{{ gcp_network_name }}"
+      gcp_subnet_name: "{{ gcp_subnet_name }}"
+      system_copy_gcs_bucket: "{{ system_copy_gcs_bucket }}"
+    aggregate: false

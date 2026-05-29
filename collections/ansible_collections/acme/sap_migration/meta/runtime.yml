@@ -1,0 +1,11 @@
+---
+requires_ansible: '>=2.16.0'
+
+action_groups:
+  sap_migration:
+    - acme.sap_migration.azure_discovery
+    - acme.sap_migration.gcp_landing_zone
+    - acme.sap_migration.gcp_sap_vm
+    - acme.sap_migration.system_copy_export
+    - acme.sap_migration.system_copy_import
+    - acme.sap_migration.cutover

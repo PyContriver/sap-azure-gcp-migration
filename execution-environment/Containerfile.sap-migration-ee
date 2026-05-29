@@ -1,0 +1,20 @@
+# sap-migration-ee: ee-minimal-rhel9 + Azure/GCP Python SDKs + certified collections
+# Base image: Hub Minimal execution environment (id 1 on 34.205.23.227)
+FROM 34.205.23.227/ee-minimal-rhel9:latest
+USER root
+ENV PIP_BREAK_SYSTEM_PACKAGES=1
+
+# Azure and GCP Python SDKs
+RUN pip3 install --no-cache-dir \
+    "azure-identity>=1.16.0" \
+    "azure-mgmt-compute>=30.0.0" \
+    "azure-mgmt-network>=25.0.0" \
+    "azure-mgmt-resource>=23.0.0" \
+    "google-auth>=2.29.0" \
+    "google-cloud-storage>=2.16.0" \
+    "requests>=2.31.0"
+
+# Collections staged by build-ee.sh from Automation Hub + local acme.sap_migration
+COPY .collections-staging /usr/share/ansible/collections/ansible_collections
+
+RUN ansible-galaxy collection list 2>/dev/null | grep -E "azure|google|sap|acme|redhat" | head -20

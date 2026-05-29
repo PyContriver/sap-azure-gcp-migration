@@ -1,0 +1,10 @@
+---
+collections:
+  - name: redhat.sap_install
+  - name: sap.sap_operations
+  - name: azure.azcollection
+  - name: google.cloud
+  - name: cloud.gcp_ops
+  - name: ansible.platform
+  - name: community.general
+  - name: community.sap_libs

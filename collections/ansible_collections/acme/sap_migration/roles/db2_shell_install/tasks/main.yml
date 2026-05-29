@@ -1,0 +1,50 @@
+---
+- name: Create Db2 filesystem layout on database host
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ sap_db2_instance }}"
+    group: "{{ sap_db2_instance }}"
+    mode: "0750"
+  loop: "{{ sap_db2_filesystem_paths }}"
+  become: true
+
+- name: Apply general SAP OS preconfiguration on Db2 host
+  ansible.builtin.include_role:
+    name: redhat.sap_install.sap_general_preconfigure
+
+- name: Apply NetWeaver preconfiguration on Db2 host (shared kernel params)
+  ansible.builtin.include_role:
+    name: redhat.sap_install.sap_netweaver_preconfigure
+
+- name: Install empty Db2 database shell via SWPM (requires media + inifile)
+  ansible.builtin.include_role:
+    name: redhat.sap_install.sap_swpm
+  vars:
+    sap_swpm_sid: "{{ sap_sid }}"
+    sap_swpm_inifile_directory: "{{ sap_db2_swpm_inifile_dir }}"
+    sap_swpm_product_catalog_id: "{{ sap_db2_swpm_product_catalog_id }}"
+  when:
+    - sap_db2_swpm_inifile_dir is defined
+    - sap_db2_swpm_inifile_dir | length > 0
+    - not sap_migration_dry_run | bool
+
+- name: Db2 shell placeholder when SWPM inifile not provided (lab only)
+  ansible.builtin.copy:
+    dest: "/db2/{{ sap_db2_instance }}/.sap_migration_db2_shell_placeholder"
+    content: |
+      Db2 shell install pending — provide SWPM inifile at {{ sap_db2_swpm_inifile_dir }}
+      SID={{ sap_sid }} INSTANCE={{ sap_db2_instance }} DATABASE={{ sap_db2_database }}
+    owner: "{{ sap_db2_instance }}"
+    group: "{{ sap_db2_instance }}"
+    mode: "0640"
+  when:
+    - sap_migration_dry_run | bool or sap_db2_swpm_inifile_dir | default('') | length == 0
+
+- name: Record Db2 shell target parameters
+  ansible.builtin.set_stats:
+    data:
+      sap_db2_instance: "{{ sap_db2_instance }}"
+      sap_db2_database: "{{ sap_db2_database }}"
+      sap_db2_port: "{{ sap_db2_port }}"
+    aggregate: false

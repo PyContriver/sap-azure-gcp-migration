@@ -1,0 +1,45 @@
+---
+- name: SAP Migration | Prerequisites check
+  hosts: localhost
+  gather_facts: false
+  vars_files:
+    - ../inventory/group_vars/all.yml
+  tasks:
+    - name: Validate required variables are defined
+      ansible.builtin.assert:
+        that:
+          - sap_sid | length > 0
+          - azure_resource_group | length > 0 or sap_migration_dry_run | bool
+          - gcp_project | length > 0 or sap_migration_dry_run | bool
+        fail_msg: >-
+          Required survey variables missing. Set sap_sid, azure_resource_group,
+          and gcp_project before running the workflow.
+
+    - name: Validate certified collection dependencies are installed
+      ansible.builtin.command:
+        argv:
+          - ansible-galaxy
+          - collection
+          - list
+      register: installed_collections
+      changed_when: false
+
+    - name: Assert certified collections present
+      ansible.builtin.assert:
+        that:
+          - "'redhat.sap_install' in installed_collections.stdout"
+          - "'sap.sap_operations' in installed_collections.stdout"
+          - "'azure.azcollection' in installed_collections.stdout"
+          - "'google.cloud' in installed_collections.stdout"
+        fail_msg: >-
+          Install certified collections from Automation Hub before running
+          migration playbooks. See execution-environment/requirements.yml.
+
+    - name: Display prerequisite summary
+      ansible.builtin.debug:
+        msg:
+          - "Migration: {{ migration_name }}"
+          - "SAP SID: {{ sap_sid }}"
+          - "Azure RG: {{ azure_resource_group }}"
+          - "GCP project: {{ gcp_project }}"
+          - "Dry run: {{ sap_migration_dry_run }}"

@@ -1,0 +1,47 @@
+---
+- name: SAP Migration | OS preconfigure on GCP
+  hosts: gcp_sap
+  become: true
+  vars_files:
+    - ../inventory/group_vars/all.yml
+    - ../inventory/group_vars/sap_ha_cluster.yml
+    - ../inventory/group_vars/profiles/{{ sap_database_type }}_ha.yml
+  tasks:
+    - name: Enforce SAP user UID/GID from Azure discovery
+      ansible.builtin.user:
+        name: "{{ sap_sid | lower }}adm"
+        uid: "{{ sap_user_uid_gid.sidadm_uid }}"
+        group: sapsys
+      when: sap_user_uid_gid.sidadm_uid is defined
+
+    - name: Apply general SAP OS preconfiguration
+      ansible.builtin.include_role:
+        name: redhat.sap_install.sap_general_preconfigure
+
+    - name: Apply HANA preconfiguration on database nodes
+      ansible.builtin.include_role:
+        name: redhat.sap_install.sap_hana_preconfigure
+      when:
+        - sap_database_type == 'hana'
+        - sap_node_role is match('hana_.*')
+
+    - name: Apply NetWeaver preconfiguration on Db2 database nodes
+      ansible.builtin.include_role:
+        name: redhat.sap_install.sap_netweaver_preconfigure
+      when:
+        - sap_database_type == 'db2'
+        - sap_node_role is match('db2_.*')
+
+    - name: Apply NetWeaver preconfiguration on application nodes
+      ansible.builtin.include_role:
+        name: redhat.sap_install.sap_netweaver_preconfigure
+      when: sap_node_role is match('ascs|ers|aas')
+
+    - name: Maintain /etc/hosts entries for SAP cluster
+      ansible.builtin.include_role:
+        name: redhat.sap_install.sap_maintain_etc_hosts
+      vars:
+        sap_maintain_etc_hosts_hostlist: >-
+          {{
+            groups['gcp_sap'] | map('extract', hostvars, 'inventory_hostname') | list
+          }}

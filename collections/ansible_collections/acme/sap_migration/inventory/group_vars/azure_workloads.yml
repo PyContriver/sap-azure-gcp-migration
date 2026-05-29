@@ -1,0 +1,174 @@
+---
+# Azure SAP-shaped workload provisioning (dev/test source landscape)
+
+azure_workload_prefix: "{{ migration_name | default('sap-migration') }}"
+azure_workload_location: "{{ azure_location | default('eastus') }}"
+azure_workload_resource_group: "{{ azure_resource_group }}"
+azure_workload_admin_user: azureuser
+azure_workload_ssh_public_key: "{{ lookup('file', azure_workload_ssh_key_file) }}"
+azure_workload_ssh_key_file: "{{ lookup('env', 'AZURE_SSH_PUB_FILE') | default('~/.ssh/id_rsa.pub', true) }}"
+
+azure_workload_create_network: true
+azure_workload_vnet_name: "{{ azure_workload_prefix }}-vnet"
+azure_workload_vnet_cidr: 10.10.0.0/16
+azure_workload_subnet_name: "{{ azure_workload_prefix }}-subnet"
+azure_workload_subnet_cidr: 10.10.1.0/24
+
+azure_workload_rhel_image:
+  publisher: RedHat
+  offer: RHEL
+  sku: "9_4"
+  version: latest
+
+# min = 1 VM (default); low = 2 VMs; sap = full 5-VM SAP-shaped layout
+azure_workload_quota_profile: min
+# B2ats_v2 is often out of stock in eastus — prefer D2s_v3; auto-select picks first available in region
+azure_workload_vm_size_low: Standard_D2s_v3
+azure_workload_vm_size_min: Standard_D2s_v3
+# Tried in order until Azure accepts one (SkuNotAvailable = no capacity, not invalid SKU)
+azure_workload_vm_size_fallback:
+  - Standard_D2s_v3
+  - Standard_D2ls_v5
+  - Standard_B2ms
+  - Standard_B2s
+  - Standard_B1ms
+  - Standard_A2_v2
+  - Standard_A1_v2
+  - Standard_F2s_v2
+  - Standard_F1s
+
+azure_workload_managed_disk_type: >-
+  {{ 'Standard_LRS' if azure_workload_quota_profile in ['low', 'min'] else 'Premium_LRS' }}
+azure_workload_public_ip_sku: Standard
+azure_workload_public_ip_allocation: Static
+
+# IBM Db2 clustered landscape (default — matches sap_database_type: db2)
+azure_workload_vms_db2:
+  - name: "{{ azure_workload_prefix }}-db2-primary"
+    sap_role: db2_primary
+    vm_size: Standard_E8s_v3
+    os_disk_size_gb: 128
+    data_disk_size_gb: 512
+  - name: "{{ azure_workload_prefix }}-db2-secondary"
+    sap_role: db2_secondary
+    vm_size: Standard_E8s_v3
+    os_disk_size_gb: 128
+    data_disk_size_gb: 512
+  - name: "{{ azure_workload_prefix }}-ascs"
+    sap_role: ascs
+    vm_size: Standard_D4s_v3
+    os_disk_size_gb: 128
+  - name: "{{ azure_workload_prefix }}-ers"
+    sap_role: ers
+    vm_size: Standard_D4s_v3
+    os_disk_size_gb: 128
+  - name: "{{ azure_workload_prefix }}-aas01"
+    sap_role: aas
+    vm_size: Standard_D8s_v3
+    os_disk_size_gb: 128
+
+# min: single VM only (db2-primary placeholder for discovery tests)
+azure_workload_vms_db2_min:
+  - name: "{{ azure_workload_prefix }}-db2-primary"
+    sap_role: db2_primary
+    vm_size: "{{ azure_workload_vm_size_min }}"
+    os_disk_size_gb: 64
+
+# Dev/low-quota: 2 VMs × 2 vCPU = 4 regional cores
+azure_workload_vms_db2_low:
+  - name: "{{ azure_workload_prefix }}-db2-primary"
+    sap_role: db2_primary
+    vm_size: "{{ azure_workload_vm_size_low }}"
+    os_disk_size_gb: 64
+    data_disk_size_gb: 128
+  - name: "{{ azure_workload_prefix }}-ascs"
+    sap_role: ascs
+    vm_size: "{{ azure_workload_vm_size_low }}"
+    os_disk_size_gb: 64
+    assign_public_ip: false
+
+# SAP HANA clustered landscape
+azure_workload_vms_hana:
+  - name: "{{ azure_workload_prefix }}-hana-primary"
+    sap_role: hana_primary
+    vm_size: Standard_E8s_v3
+    os_disk_size_gb: 128
+    data_disk_size_gb: 512
+  - name: "{{ azure_workload_prefix }}-hana-secondary"
+    sap_role: hana_secondary
+    vm_size: Standard_E8s_v3
+    os_disk_size_gb: 128
+    data_disk_size_gb: 512
+  - name: "{{ azure_workload_prefix }}-ascs"
+    sap_role: ascs
+    vm_size: Standard_D4s_v3
+    os_disk_size_gb: 128
+  - name: "{{ azure_workload_prefix }}-ers"
+    sap_role: ers
+    vm_size: Standard_D4s_v3
+    os_disk_size_gb: 128
+  - name: "{{ azure_workload_prefix }}-aas01"
+    sap_role: aas
+    vm_size: Standard_D8s_v3
+    os_disk_size_gb: 128
+
+azure_workload_vms_hana_min:
+  - name: "{{ azure_workload_prefix }}-hana-primary"
+    sap_role: hana_primary
+    vm_size: "{{ azure_workload_vm_size_min }}"
+    os_disk_size_gb: 64
+
+azure_workload_vms_hana_low:
+  - name: "{{ azure_workload_prefix }}-hana-primary"
+    sap_role: hana_primary
+    vm_size: "{{ azure_workload_vm_size_low }}"
+    os_disk_size_gb: 64
+    data_disk_size_gb: 128
+  - name: "{{ azure_workload_prefix }}-ascs"
+    sap_role: ascs
+    vm_size: "{{ azure_workload_vm_size_low }}"
+    os_disk_size_gb: 64
+    assign_public_ip: false
+
+azure_workload_vms: >-
+  {{
+    (azure_workload_vms_db2_min if azure_workload_quota_profile == 'min'
+     else azure_workload_vms_db2_low if azure_workload_quota_profile == 'low'
+     else azure_workload_vms_db2)
+    if sap_database_type == 'db2'
+    else (azure_workload_vms_hana_min if azure_workload_quota_profile == 'min'
+     else azure_workload_vms_hana_low if azure_workload_quota_profile == 'low'
+     else azure_workload_vms_hana)
+  }}
+
+azure_workload_common_tags:
+  managed-by: sap-migration
+  sap-system: "{{ sap_sid | lower }}"
+  sap-database: "{{ sap_database_type }}"
+  environment: dev
+
+azure_workload_security_rules:
+  - name: AllowSSH
+    protocol: Tcp
+    destination_port_range: "22"
+    access: Allow
+    priority: 100
+    direction: Inbound
+  - name: AllowSAP
+    protocol: Tcp
+    destination_port_range: "3200-3299"
+    access: Allow
+    priority: 110
+    direction: Inbound
+  - name: AllowDb2
+    protocol: Tcp
+    destination_port_range: "50000-50001"
+    access: Allow
+    priority: 120
+    direction: Inbound
+  - name: AllowHANA
+    protocol: Tcp
+    destination_port_range: "30013-39015"
+    access: Allow
+    priority: 130
+    direction: Inbound

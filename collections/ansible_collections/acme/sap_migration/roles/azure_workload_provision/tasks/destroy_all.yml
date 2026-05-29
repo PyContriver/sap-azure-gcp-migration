@@ -1,0 +1,35 @@
+---
+- name: Validate Azure resource group name
+  ansible.builtin.assert:
+    that:
+      - azure_workload_resource_group | length > 0
+
+- name: Remove all workload VMs (reverse order)
+  ansible.builtin.include_tasks: provision_vm.yml
+  loop: "{{ azure_workload_vms | reverse | list }}"
+  loop_control:
+    loop_var: workload_vm
+    label: "{{ workload_vm.name }}"
+  vars:
+    azure_workload_state: absent
+
+- name: Remove subnet and VNet
+  block:
+    - azure.azcollection.azure_rm_subnet:
+        resource_group: "{{ azure_workload_resource_group }}"
+        name: "{{ azure_workload_subnet_name }}"
+        virtual_network: "{{ azure_workload_vnet_name }}"
+        state: absent
+    - azure.azcollection.azure_rm_virtualnetwork:
+        resource_group: "{{ azure_workload_resource_group }}"
+        name: "{{ azure_workload_vnet_name }}"
+        state: absent
+  when: azure_workload_create_network | bool
+
+- name: Remove resource group when requested
+  azure.azcollection.azure_rm_resourcegroup:
+    name: "{{ azure_workload_resource_group }}"
+    location: "{{ azure_workload_location }}"
+    state: absent
+    force_delete_nonempty: true
+  when: azure_workload_delete_resource_group | default(false) | bool
