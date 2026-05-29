@@ -98,7 +98,7 @@
     - name: Create SAP migration security group
       amazon.aws.ec2_security_group:
         name: "sap-migration-{{ sap_sid | lower }}-sg"
-        description: "SAP migration target — {{ sap_sid }}"
+        description: "SAP migration target for {{ sap_sid }}"
         vpc_id: "{{ _vpc_id }}"
         region: "{{ _aws_region }}"
         rules:
