@@ -8,8 +8,9 @@ migration_phase: discovery
 azure_subscription_id: "{{ lookup('env', 'AZURE_SUBSCRIPTION_ID') | default('', true) }}"
 azure_resource_group: "{{ lookup('env', 'AZURE_RESOURCE_GROUP') | default('', true) }}"
 azure_location: eastus
+# azure_rm_virtualmachine_info tags must be a list of "key:value" strings
 azure_vm_tag_filter:
-  sap-system: "{{ sap_sid | lower }}"
+  - "sap-system:{{ sap_sid | lower }}"
 
 # GCP target
 gcp_project: "{{ lookup('env', 'GCP_PROJECT') | default('', true) }}"

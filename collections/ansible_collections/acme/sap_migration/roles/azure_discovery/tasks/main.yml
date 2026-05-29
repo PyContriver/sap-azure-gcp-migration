@@ -12,10 +12,14 @@
     tags: "{{ azure_vm_tag_filter | default(omit) }}"
   register: azure_vms
 
-- name: Fail when no VMs discovered
+- name: Warn when no VMs discovered (dry-run continues; live run stops)
   ansible.builtin.fail:
-    msg: "No VMs found in {{ azure_resource_group }} matching tag filter."
-  when: azure_vms.vms | default([]) | length == 0
+    msg: >-
+      No VMs found in {{ azure_resource_group }} with tag filter {{ azure_vm_tag_filter | default('(none)') }}.
+      Ensure VMs are tagged 'sap-system:{{ sap_sid | lower }}' in Azure, or set azure_vm_tag_filter: [] to discover all VMs.
+  when:
+    - azure_vms.vms | default([]) | length == 0
+    - not (sap_migration_dry_run | bool)
 
 - name: Gather VM size details for each discovered VM
   azure.azcollection.azure_rm_virtualmachinesize_info:
