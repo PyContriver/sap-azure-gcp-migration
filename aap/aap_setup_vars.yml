@@ -184,7 +184,7 @@ aap_workflow_survey:
       question_name: SSH public key for GCP VM access
       type: textarea
       required: true
-      default: "{{ lookup('env', 'GCP_SSH_PUB_KEY') | default('', true) }}"
+      default: "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDmDO42g764SDhV1zCc6yiybGQd/3m7nzrP930a8zGjbiL99kr4H8f2P0WW7e0AiIlT/AAWvxgpJ0GqhhZFqodfuKpX9bI3+oYuHARDMIrbK2b/zFFHc9E9wNhGdOQRs6RWF4LHIkJw/5rzPcxbR8KWmcUkFyy1Crw4TWp6w2imhMmdw/xDbCP33D8NVoULvSfuSqBDOw7ouc6waX0VN+zzhSvBs/h63c4VWLp6kTSxY2oLbxBqu1VP7y/5RHHr7D+i3Kg6v8yfOfm9AmVQ8344lzf3tTAX773y0dQTip5GlMZyXyQPw5q0sms8wkpbDmRJshwTgppAWXfoPCTPQNs5eRXgaEpeSIY9trXwutd/6J3oczArDz0xhTqyiq+a7/GabEASU3fPCXk3pcaQ84WvLgcfLaf8z/VElKLSbjxaYzrcD90+B0OkLRRHYn7KrzzgLd2ALTekWcD89NAQ9LnFl+XQOCFOBLXhwswR9ghWR/7vLwVS1aNnccomo8qB0P3Ts7T1RXiwybSfkOdxr7gJYjwx8mD5pKZ2suz9NCRFQE1b0AZhkQ4mzWfg1DWkA2Px9jDb1AF3/dwMExAQg5y3wuKnIB7NX4P99ccrx+CopKAdpGAtKKl2oJA2MDnThPKNudfPfrv9DHtpCZwViDpiDxElo1Dwi/+QttfPi8pdXQ== siddasha@siddasha-mac"
 
 # Workflow DAG: phase1 → approval → phase2 → approval → phase3
 aap_workflow_nodes:
