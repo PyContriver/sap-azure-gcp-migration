@@ -16,8 +16,14 @@ azure_vm_tag_filter:
 gcp_project: "{{ lookup('env', 'GCP_PROJECT') | default('', true) }}"
 gcp_region: us-central1
 gcp_zone: "{{ gcp_region }}-a"
-gcp_cred_kind: "{{ lookup('env', 'GCP_AUTH_KIND') | default('application', true) }}"
-gcp_cred_file: "{{ lookup('env', 'GCP_SERVICE_ACCOUNT_FILE') | default('', true) }}"
+gcp_cred_kind: "{{ lookup('env', 'GCP_AUTH_KIND') | default('serviceaccount', true) }}"
+# AAP custom credential injects GOOGLE_APPLICATION_CREDENTIALS; local runs use GCP_SERVICE_ACCOUNT_FILE
+gcp_cred_file: >-
+  {{
+    lookup('env', 'GOOGLE_APPLICATION_CREDENTIALS')
+    | default(lookup('env', 'GCP_SERVICE_ACCOUNT_FILE'), true)
+    | default('', true)
+  }}
 gcp_service_account_file_param: >-
   {{ gcp_cred_file if (gcp_cred_kind == 'serviceaccount' and gcp_cred_file | length > 0) else omit }}
 gcp_network_name: sap-migration-vpc

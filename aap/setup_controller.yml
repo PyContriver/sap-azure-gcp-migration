@@ -116,6 +116,7 @@
             GCP_AUTH_KIND: serviceaccount
             GCP_PROJECT: "{% raw %}{{ gcp_project }}{% endraw %}"
             GOOGLE_APPLICATION_CREDENTIALS: "{% raw %}{{ tower.filename }}{% endraw %}"
+            GCP_SERVICE_ACCOUNT_FILE: "{% raw %}{{ tower.filename }}{% endraw %}"
           file:
             template: "{% raw %}{{ gcp_service_account_json }}{% endraw %}"
         state: present
